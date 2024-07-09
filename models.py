@@ -12,6 +12,7 @@ Reference:
 
 
 class SpectralConv2d(nn.Module):
+
     def __init__(
         self, 
         u_dim: int,
@@ -66,10 +67,10 @@ class SpectralConv2d(nn.Module):
         return out_ifft
 
 
-class FourierLayer(nn.Module):
+# class FourierLayer(nn.Module):
 
-    def __init__(self, spectral_conv2d: SpectralConv2d, W_width) -> None:
-        self.local_linear = nn.Conv2d(in_channels=)
+#     def __init__(self, spectral_conv2d: SpectralConv2d, width) -> None:
+#         self.local_linear = nn.Conv2d(in_channels=)
 
 
 class FNO2d(nn.Module):
@@ -78,8 +79,7 @@ class FNO2d(nn.Module):
         u_dim: int, 
         x_modes: int = 12, 
         y_modes: int = 12, 
-        width_W: int = 20, 
-        initial_steps: int = 10,
+        width: int = 20, 
     ):
         super().__init__()
 
@@ -90,16 +90,13 @@ class FNO2d(nn.Module):
         u_dim (int): dim of the physic field
         x_modes (int): number of Fourier waves in the first dimension
         y_modes (int): number of Fourier waves in the second dimension
-        W_width (int): 
-
-
-
+        width (int): 
 
         """
 
         """
         The overall network. It contains 4 layers of the Fourier layer.
-        1. Lift the input to the desire channel dimension by self.fc0 .
+        1. Lift the input to the desire channel dimension by self.P .
         2. 4 layers of the integral operators u' = (W + K)(u).
             W defined by self.w; K defined by self.conv .
         3. Project from the channel space to the output space by self.fc1 and self.fc2 .
@@ -110,68 +107,113 @@ class FNO2d(nn.Module):
         output shape: (batch_size, x, y, c)
         """
 
+        self.u_dim: int = u_dim
         self.x_modes: int = x_modes
         self.y_modes: int = y_modes
         self.width: int = width
-        self.padding: int = 2 # pad the domain if input is non-periodic
-        self.fc0 = nn.Linear(in_features=initial_steps * u_dim + 2, out_features=self.width)
-        # input channel is 12: the solution of the previous 10 timesteps + 2 locations (u(t-10, x, y), ..., u(t-1, x, y),  x, y)
 
-        self.conv0 = SpectralConv2d(in_channels=self.width, out_channels=self.width, x_modes=self.x_modes, y_modes=self.y_modes)
-        self.conv1 = SpectralConv2d(in_channels=self.width, out_channels=self.width, x_modes=self.x_modes, y_modes=self.y_modes)
-        self.conv2 = SpectralConv2d(in_channels=self.width, out_channels=self.width, x_modes=self.x_modes, y_modes=self.y_modes)
-        self.conv3 = SpectralConv2d(in_channels=self.width, out_channels=self.width, x_modes=self.x_modes, y_modes=self.y_modes)
-        self.w0 = nn.Conv2d(in_channels=self.width, out_channels=self.width, kernel_size=1)
-        self.w1 = nn.Conv2d(in_channels=self.width, out_channels=self.width, kernel_size=1)
-        self.w2 = nn.Conv2d(in_channels=self.width, out_channels=self.width, kernel_size=1)
-        self.w3 = nn.Conv2d(in_channels=self.width, out_channels=self.width, kernel_size=1)
+        assert width > u_dim, '`width` should be greater than `u_dim` for the model to uplift the input dim'
 
-        self.fc1 = nn.Linear(in_features=self.width, out_features=128)
-        self.fc2 = nn.Linear(in_features=128, out_features=u_dim)
+        self.P = nn.Linear(in_features=u_dim, out_features=self.width)
+        self.Q = nn.Linear(in_features=self.width, out_features=u_dim)
 
-    def forward(self, x: torch.Tensor, grid: torch.Tensor):
-        # x dim = [b, x1, x2, t*v]
-        batch_size: int = x.shape[0]
+        # Fourier Layer 0
+        self.spectral_conv0 = SpectralConv2d(
+            u_dim=self.width,
+            x_modes=self.x_modes, y_modes=self.y_modes,
+        )
+        self.W0 = nn.Conv2d(in_channels=self.width, out_channels=self.width, kernel_size=1)
 
+        # Fourier Layer 1
+        self.spectral_conv1 = SpectralConv2d(
+            u_dim=self.width,
+            x_modes=self.x_modes, y_modes=self.y_modes,
+        )
+        self.W1 = nn.Conv2d(in_channels=self.width, out_channels=self.width, kernel_size=1)
         
-        x = torch.cat(tensors=(x, grid), dim=-1)
-        x = self.fc0(x)
-        x = x.permute(0, 3, 1, 2)
+        # Fourier Layer 2
+        self.spectral_conv2 = SpectralConv2d(
+            u_dim=self.width,
+            x_modes=self.x_modes, y_modes=self.y_modes,
+        )
+        self.W2 = nn.Conv2d(in_channels=self.width, out_channels=self.width, kernel_size=1)
         
-        # Pad tensor with boundary condition
-        x = F.pad(input=x, pad=[0, self.padding, 0, self.padding])
+        # Fourier Layer 3
+        self.spectral_conv3 = SpectralConv2d(
+            u_dim=self.width,
+            x_modes=self.x_modes, y_modes=self.y_modes,
+        )
+        self.W3 = nn.Conv2d(in_channels=self.width, out_channels=self.width, kernel_size=1)
 
-        x1 = self.conv0(x)
-        x2 = self.w0(x)
-        x = x1 + x2
-        x = F.gelu(x)
-
-        x1 = self.conv1(x)
-        x2 = self.w1(x)
-        x = x1 + x2
-        x = F.gelu(x)
-
-        x1 = self.conv2(x)
-        x2 = self.w2(x)
-        x = x1 + x2
-        x = F.gelu(x)
-
-        x1 = self.conv3(x)
-        x2 = self.w3(x)
-        x = x1 + x2
-
-        x = x[..., :-self.padding, :-self.padding] # Unpad the tensor
-        x = x.permute(0, 2, 3, 1)
-        x = self.fc1(x)
-        x = F.gelu(x)
-        x = self.fc2(x)
+    def forward(self, input: torch.Tensor) -> torch.Tensor:
+        # input dim = [batch_size, u_dim, x_dim, y_dim)
+        batch_size: int = input.shape[0]
+        u_dim: int = input.shape[1]
+        x_dim: int = input.shape[2]
+        y_dim: int = input.shape[3]
         
-        return x.unsqueeze(-2)
+        # Uplifting
+        input: torch.Tensor = input.permute(0, 2, 3, 1)
+        lifted_input: torch.Tensor = self.P(input)
+        lifted_input: torch.Tensor = lifted_input.permute(0, 3, 1, 2)
+        assert lifted_input.shape[1] == self.width
+        
+        # Block 0
+        out1: torch.Tensor = self.spectral_conv0(lifted_input)
+        out2: torch.Tensor = self.W0(lifted_input)
+        assert out1.shape == out2.shape, (
+            f'both out1 and out2 must have the same shape as '
+            f'(batch_size, self.width, x_dim, y_dim) ' 
+            f'= {(batch_size, self.width, x_dim, y_dim)}'
+        )
+        out: torch.Tensor = out1 + out2
+        out: torch.Tensor = F.gelu(out)
+
+        # Block 1
+        out1: torch.Tensor = self.spectral_conv1(out)
+        out2: torch.Tensor = self.W1(out)
+        assert out1.shape == out2.shape, (
+            f'both out1 and out2 must have the same shape as '
+            f'(batch_size, self.width, x_dim, y_dim) ' 
+            f'= {(batch_size, self.width, x_dim, y_dim)}'
+        )
+        out = out1 + out2
+        out = F.gelu(out)
+
+        # Block 2
+        out1 = self.spectral_conv2(out)
+        out2 = self.W2(out)
+        assert out1.shape == out2.shape, (
+            f'both out1 and out2 must have the same shape as '
+            f'(batch_size, self.width, x_dim, y_dim) ' 
+            f'= {(batch_size, self.width, x_dim, y_dim)}'
+        )
+        out = out1 + out2
+        out = F.gelu(out)
+
+        # Block 3
+        out1 = self.spectral_conv3(out)
+        out2 = self.W3(out)
+        assert out1.shape == out2.shape, (
+            f'both out1 and out2 must have the same shape as '
+            f'(batch_size, self.width, x_dim, y_dim) ' 
+            f'= {(batch_size, self.width, x_dim, y_dim)}'
+        )
+        out = out1 + out2
+        out = F.gelu(out)
+
+        out = out.permute(0, 2, 3, 1)
+        projected_output: torch.Tensor = self.Q(out)
+        projected_output: torch.Tensor = F.gelu(projected_output)
+        projected_output: torch.Tensor = projected_output.permute(0, 3, 1, 2)
+        return projected_output
     
 
 if __name__ == '__main__':
     x = torch.rand(32, 2, 64, 64)
-    self = SpectralConv2d(u_dim=x.shape[1], x_modes=16, y_modes=16)
-    y = self(x)
+    # self = SpectralConv2d(u_dim=x.shape[1], x_modes=16, y_modes=16)
+    # y = self(x)
 
+    self = FNO2d(u_dim=2, x_modes=5, y_modes=5, width=25)
+    y = self(x)
 
