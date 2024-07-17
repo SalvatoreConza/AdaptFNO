@@ -48,24 +48,24 @@ class SpectralConv2d(nn.Module):
         return torch.einsum("bixy,ioxy->boxy", input, self.weights_R)
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
-        assert input.ndim == 4, 'Expected input of shape: (batch_size, self.u_dim, x_dim, y_dim)'
+        assert input.ndim == 4, 'Expected input of shape: (batch_size, self.u_dim, x_res, y_res)'
         assert input.shape[1] == self.u_dim, 'input.shape[1] must match self.u_dim'
 
         batch_size: int = input.shape[0]
-        x_dim: int = input.shape[2]
-        y_dim: int = input.shape[3]
-        out_y_dim: int = y_dim // 2 + 1
+        x_res: int = input.shape[2]
+        y_res: int = input.shape[3]
+        y_res: int = y_res // 2 + 1
 
         # Fourier coeffcients
         out_fft: torch.Tensor = torch.fft.rfft2(input)
-        assert out_fft.shape == (batch_size, self.u_dim, x_dim, out_y_dim)
+        assert out_fft.shape == (batch_size, self.u_dim, x_res, y_res)
 
         # Linear transformation
         out_linear: torch.Tensor= self.R(
             input=out_fft[:, :, :self.x_modes, :self.y_modes],
         )
         # Inverse Fourier transform
-        out_ifft: torch.Tensor = torch.fft.irfft2(out_linear, s=(x_dim, y_dim))
+        out_ifft: torch.Tensor = torch.fft.irfft2(out_linear, s=(x_res, y_res))
         return out_ifft
 
 
@@ -152,11 +152,11 @@ class FNO2d(nn.Module):
         )
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
-        # input dim = [batch_size, u_dim, x_dim, y_dim)
+        # input dim = [batch_size, u_dim, x_res, y_res)
         batch_size: int = input.shape[0]
         u_dim: int = input.shape[1]
-        x_dim: int = input.shape[2]
-        y_dim: int = input.shape[3]
+        x_res: int = input.shape[2]
+        y_res: int = input.shape[3]
         
         # Uplifting
         input: torch.Tensor = input.permute(0, 2, 3, 1)
@@ -169,8 +169,8 @@ class FNO2d(nn.Module):
         out2: torch.Tensor = self.W0(lifted_input)
         assert out1.shape == out2.shape, (
             f'both out1 and out2 must have the same shape as '
-            f'(batch_size, self.width, x_dim, y_dim) ' 
-            f'= {(batch_size, self.width, x_dim, y_dim)}'
+            f'(batch_size, self.width, x_res, y_res) ' 
+            f'= {(batch_size, self.width, x_res, y_res)}'
         )
         out: torch.Tensor = out1 + out2
         out: torch.Tensor = F.gelu(out)
@@ -180,8 +180,8 @@ class FNO2d(nn.Module):
         out2: torch.Tensor = self.W1(out)
         assert out1.shape == out2.shape, (
             f'both out1 and out2 must have the same shape as '
-            f'(batch_size, self.width, x_dim, y_dim) ' 
-            f'= {(batch_size, self.width, x_dim, y_dim)}'
+            f'(batch_size, self.width, x_res, y_res) ' 
+            f'= {(batch_size, self.width, x_res, y_res)}'
         )
         out = out1 + out2
         out = F.gelu(out)
@@ -191,8 +191,8 @@ class FNO2d(nn.Module):
         out2 = self.W2(out)
         assert out1.shape == out2.shape, (
             f'both out1 and out2 must have the same shape as '
-            f'(batch_size, self.width, x_dim, y_dim) ' 
-            f'= {(batch_size, self.width, x_dim, y_dim)}'
+            f'(batch_size, self.width, x_res, y_res) ' 
+            f'= {(batch_size, self.width, x_res, y_res)}'
         )
         out = out1 + out2
         out = F.gelu(out)
@@ -202,8 +202,8 @@ class FNO2d(nn.Module):
         out2 = self.W3(out)
         assert out1.shape == out2.shape, (
             f'both out1 and out2 must have the same shape as '
-            f'(batch_size, self.width, x_dim, y_dim) ' 
-            f'= {(batch_size, self.width, x_dim, y_dim)}'
+            f'(batch_size, self.width, x_res, y_res) ' 
+            f'= {(batch_size, self.width, x_res, y_res)}'
         )
         out = out1 + out2
         out = F.gelu(out)
@@ -220,9 +220,8 @@ class AdaptiveSpectralConv2d(nn.Module):
     def __init__(
         self, 
         u_dim: int,
-        x_dim: int,
-        y_dim: int,
-        min_explanation: float
+        x_modes: int,
+        y_modes: int,
     ):
         super().__init__()
 
@@ -236,67 +235,52 @@ class AdaptiveSpectralConv2d(nn.Module):
         """
 
         self.u_dim: int = u_dim
-        self.x_dim: int = x_dim
-        self.y_dim: int = y_dim
-        self.out_y_dim: int = y_dim // 2 + 1
-
-        assert 0 < min_explanation <= 1
-        self.min_explanation: float = min_explanation
+        self.x_modes: int = x_modes
+        self.y_modes: int = y_modes
 
         self.scale: float = 1 / (u_dim * u_dim)
         self.weights_R = nn.Parameter(
-            data=self.scale * torch.rand(u_dim, u_dim, self.x_dim, self.out_y_dim, dtype=torch.cfloat)
+            data=self.scale * torch.rand(u_dim, u_dim, self.x_modes, self.y_modes, dtype=torch.cfloat)
         )
 
     def R(self, input: torch.Tensor) -> torch.Tensor:
         return torch.einsum("bixy,ioxy->boxy", input, self.weights_R)
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
-        assert input.ndim == 4, 'Expected input of shape: (batch_size, self.u_dim, x_dim, y_dim)'
+        assert input.ndim == 4, 'Expected input of shape: (batch_size, self.u_dim, x_modes, y_modes)'
         assert input.shape[1] == self.u_dim, 'input.shape[1] must match self.u_dim'
-        assert input.shape[2] == self.x_dim, 'input.shape[2] must match self.x_dim'
-        assert input.shape[3] == self.y_dim, 'input.shape[3] must match self.y_dim'
-        
+
         batch_size: int = input.shape[0]
+        x_res: int = input.shape[2]
+        y_res: int = input.shape[3]
+
+        assert x_res >= self.x_modes, f'x_res={input.shape[2]} must greater or equal to self.x_modes={self.x_modes}'
+        assert y_res >= self.y_modes, f'y_res={input.shape[3]} must greater or equal to self.y_modes={self.y_modes}'
 
         # Fourier coeffcients
-        out_fft: torch.Tensor = torch.fft.rfft2(input)
-        assert out_fft.shape == (batch_size, self.u_dim, self.x_dim, self.out_y_dim)
+        out_fft: torch.Tensor = torch.fft.fft2(input)
+        assert out_fft.shape == (batch_size, self.u_dim, x_res, y_res)
+        
+        # Truncate max x_modes, y_modes
+        out_fft: torch.Tensor = out_fft[:, :, :self.x_modes, :self.y_modes]
 
         # Linear transformation
         out_linear: torch.Tensor= self.R(input=out_fft)
-        assert out_fft.shape == (batch_size, self.u_dim, self.x_dim, self.out_y_dim)
+        assert out_fft.shape == (batch_size, self.u_dim, self.x_modes, self.y_modes)
 
-        # Compute modes
-        with torch.no_grad():
-            x_modes, y_modes = self.compute_modes(coeffs=self.weights_R)
-
-        # Truncate spectrum:
-        out_linear: torch.Tensor = out_linear[:, :, :x_modes, :y_modes]
+        # Apply spectral weights
+        spectral_weights: torch.Tensor = self.compute_spectral_weights(coeffs=self.weights_R)
+        assert spectral_weights.shape == (self.x_modes, self.y_modes)
+        # Note: `spectral_weights` will be broadcasted to (batch_size, self.u_dim, self.x_modes, self.y_modes)
+        out_linear: torch.Tensor = spectral_weights * out_linear
+        assert out_linear.shape == (batch_size, self.u_dim, self.x_modes, self.y_modes)
 
         # Inverse Fourier transform
-        out_ifft: torch.Tensor = torch.fft.irfft2(out_linear, s=(self.x_dim, self.y_dim))
+        out_ifft: torch.Tensor = torch.fft.irfft2(out_linear, s=(x_res, y_res))
         return out_ifft
 
-    #subject to change
-    def compute_modes(self, coeffs: torch.Tensor) -> Tuple[int, int]:
-        strength_matrix: torch.Tensor = torch.norm(coeffs, p='fro', dim=(0, 1))
-        assert strength_matrix.shape == (self.x_dim, self.out_y_dim)
-
-        cumulative_strength_matrix: torch.Tensor = torch.cumsum(
-            input=torch.cumsum(strength_matrix, dim=0), 
-            dim=1,
-        )
-        explanation_ratio_matrix: torch.Tensor = (
-            cumulative_strength_matrix / strength_matrix.sum()
-        )
-
-        for i in range(explanation_ratio_matrix.shape[0]):
-            for j in range(explanation_ratio_matrix.shape[1]):
-                if explanation_ratio_matrix[i, j] >= self.min_explanation:
-                    return i, j
-
-        raise RuntimeError(f'Cannot find mode in explanation ratio matrix {explanation_ratio_matrix}')
+    def compute_spectral_weights(self, coeffs: torch.Tensor) -> torch.Tensor:
+        return torch.norm(coeffs, p='fro', dim=(0, 1))
 
 
 class AdaptiveFNO2d(nn.Module):
@@ -304,18 +288,16 @@ class AdaptiveFNO2d(nn.Module):
     def __init__(
        self, 
         u_dim: int,
-        x_dim: int,
-        y_dim: int,
         width: int, 
-        min_explanation: float,
+        x_modes: int = 24, 
+        y_modes: int = 24,
     ):
         super().__init__()
 
         self.u_dim: int = u_dim
-        self.x_dim: int = x_dim
-        self.y_dim: int = y_dim
         self.width: int = width
-        self.min_explanation: float = min_explanation
+        self.x_modes: int = x_modes
+        self.y_modes: int = y_modes
 
         assert width > u_dim, '`width` should be greater than `u_dim` for the model to uplift the input dim'
 
@@ -325,68 +307,64 @@ class AdaptiveFNO2d(nn.Module):
         # Fourier Layer 0
         self.spectral_conv0 = AdaptiveSpectralConv2d(
             u_dim=width,
-            x_dim=x_dim,
-            y_dim=y_dim,
-            min_explanation=min_explanation
+            x_modes=self.x_modes,
+            y_modes=self.y_modes,
         )
         self.W0 = nn.Conv2d(
-            in_channels=self.width, out_channels=self.width, 
+            in_channels=self.width, out_channels=self.width,
             kernel_size=1,
         )
         # Fourier Layer 1
         self.spectral_conv1 = AdaptiveSpectralConv2d(
             u_dim=width,
-            x_dim=x_dim,
-            y_dim=y_dim,
-            min_explanation=min_explanation
+            x_modes=self.x_modes,
+            y_modes=self.y_modes,
         )
         self.W1 = nn.Conv2d(
-            in_channels=self.width, out_channels=self.width, 
+            in_channels=self.width, out_channels=self.width,
             kernel_size=1,
         )
         # Fourier Layer 2
         self.spectral_conv2 = AdaptiveSpectralConv2d(
             u_dim=width,
-            x_dim=x_dim,
-            y_dim=y_dim,
-            min_explanation=min_explanation
+            x_modes=self.x_modes,
+            y_modes=self.y_modes,
         )
         self.W2 = nn.Conv2d(
-            in_channels=self.width, out_channels=self.width, 
+            in_channels=self.width, out_channels=self.width,
             kernel_size=1,
         )
         # Fourier Layer 3
         self.spectral_conv3 = AdaptiveSpectralConv2d(
             u_dim=width,
-            x_dim=x_dim,
-            y_dim=y_dim,
-            min_explanation=min_explanation
+            x_modes=self.x_modes,
+            y_modes=self.y_modes,
         )
         self.W3 = nn.Conv2d(
-            in_channels=self.width, out_channels=self.width, 
+            in_channels=self.width, out_channels=self.width,
             kernel_size=1,
         )
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
-        # input dim = [batch_size, u_dim, x_dim, y_dim)
+        # input dim = [batch_size, u_dim, x_res, y_res)
         batch_size: int = input.shape[0]
         u_dim: int = input.shape[1]
-        x_dim: int = input.shape[2]
-        y_dim: int = input.shape[3]
+        x_res: int = input.shape[2]
+        y_res: int = input.shape[3]
         
         # Uplifting
         input: torch.Tensor = input.permute(0, 2, 3, 1)
         lifted_input: torch.Tensor = self.P(input)
         lifted_input: torch.Tensor = lifted_input.permute(0, 3, 1, 2)
-        assert lifted_input.shape[1] == self.width
+        assert lifted_input.shape == (batch_size, self.width, x_res, y_res)
         
         # Block 0
         out1: torch.Tensor = self.spectral_conv0(lifted_input)
         out2: torch.Tensor = self.W0(lifted_input)
         assert out1.shape == out2.shape, (
             f'both out1 and out2 must have the same shape as '
-            f'(batch_size, self.width, x_dim, y_dim) ' 
-            f'= {(batch_size, self.width, x_dim, y_dim)}'
+            f'(batch_size, self.width, self.x_modes, self.y_modes) ' 
+            f'= {(batch_size, self.width, self.x_modes, self.y_modes)}'
         )
         out: torch.Tensor = out1 + out2
         out: torch.Tensor = F.gelu(out)
@@ -396,148 +374,40 @@ class AdaptiveFNO2d(nn.Module):
         out2: torch.Tensor = self.W1(out)
         assert out1.shape == out2.shape, (
             f'both out1 and out2 must have the same shape as '
-            f'(batch_size, self.width, x_dim, y_dim) ' 
-            f'= {(batch_size, self.width, x_dim, y_dim)}'
+            f'(batch_size, self.width, self.x_modes, self.y_modes) ' 
+            f'= {(batch_size, self.width, self.x_modes, self.y_modes)}'
         )
-        out = out1 + out2
-        out = F.gelu(out)
+        out: torch.Tensor = out1 + out2
+        out: torch.Tensor = F.gelu(out)
 
         # Block 2
-        out1 = self.spectral_conv2(out)
-        out2 = self.W2(out)
+        out1: torch.Tensor = self.spectral_conv2(out)
+        out2: torch.Tensor = self.W2(out)
         assert out1.shape == out2.shape, (
             f'both out1 and out2 must have the same shape as '
-            f'(batch_size, self.width, x_dim, y_dim) ' 
-            f'= {(batch_size, self.width, x_dim, y_dim)}'
+            f'(batch_size, self.width, self.x_modes, self.y_modes) ' 
+            f'= {(batch_size, self.width, self.x_modes, self.y_modes)}'
         )
-        out = out1 + out2
-        out = F.gelu(out)
+        out: torch.Tensor = out1 + out2
+        out: torch.Tensor = F.gelu(out)
 
         # Block 3
-        out1 = self.spectral_conv3(out)
-        out2 = self.W3(out)
+        out1: torch.Tensor = self.spectral_conv3(out)
+        out2: torch.Tensor = self.W3(out)
         assert out1.shape == out2.shape, (
             f'both out1 and out2 must have the same shape as '
-            f'(batch_size, self.width, x_dim, y_dim) ' 
-            f'= {(batch_size, self.width, x_dim, y_dim)}'
+            f'(batch_size, self.width, self.x_modes, self.y_modes) ' 
+            f'= {(batch_size, self.width, self.x_modes, self.y_modes)}'
         )
-        out = out1 + out2
-        out = F.gelu(out)
 
-        out = out.permute(0, 2, 3, 1)
+        out: torch.Tensor = out1 + out2
+        out: torch.Tensor = F.gelu(out)
+
+        out: torch.Tensor = out.permute(0, 2, 3, 1)
         projected_output: torch.Tensor = self.Q(out)
         projected_output: torch.Tensor = F.gelu(projected_output)
         projected_output: torch.Tensor = projected_output.permute(0, 3, 1, 2)
         return projected_output
-
-
-# under development
-class AFNO2D(nn.Module):
-    """
-    hidden_size: channel dimension size
-    num_blocks: how many blocks to use in the block diagonal weight matrices (higher => less complexity but less parameters)
-    sparsity_threshold: lambda for softshrink
-    hard_thresholding_fraction: how many frequencies you want to completely mask out (lower => hard_thresholding_fraction^2 less FLOPs)
-    """
-    def __init__(
-        self, 
-        hidden_size: int, 
-        num_blocks: int = 8, 
-        sparsity_threshold: float = 0.01, 
-        hard_thresholding_fraction: float = 1., 
-        hidden_size_factor: int = 1,
-    ):
-        super().__init__()
-        assert hidden_size % num_blocks == 0, f"hidden_size {hidden_size} should be divisble by num_blocks {num_blocks}"
-
-        self.hidden_size = hidden_size
-        self.num_blocks = num_blocks
-        self.block_size = hidden_size // num_blocks
-        self.hidden_size_factor = hidden_size_factor
-
-        self.sparsity_threshold = sparsity_threshold
-        self.hard_thresholding_fraction = hard_thresholding_fraction
-        self.scale = 0.02
-
-        self.w1 = nn.Parameter(
-            data=self.scale * torch.randn(2, num_blocks, self.block_size, self.block_size * hidden_size_factor)
-        )
-        self.b1 = nn.Parameter(
-            data=self.scale * torch.randn(2, num_blocks, self.block_size * hidden_size_factor)
-        )
-        self.w2 = nn.Parameter(
-            data=self.scale * torch.randn(2, num_blocks, self.block_size * hidden_size_factor, self.block_size)
-        )
-        self.b2 = nn.Parameter(
-            data=self.scale * torch.randn(2, num_blocks, self.block_size)
-        )
-
-    def forward(
-        self, 
-        input: torch.Tensor, 
-    ):
-        
-        assert input.ndim == 4
-        batch_size: int = input.shape[0]
-        x_dim: int = input.shape[1]
-        y_dim: int = input.shape[2]
-        u_dim: int = input.shape[3]
-
-        bias: torch.Tensor = x
-        dtype = x.dtype
-
-        out: torch.Tensor = torch.fft.rfft2(input, dim=(1, 2), norm="ortho")
-        out: torch.Tensor = out.reshape(batch_size, out.shape[1], out.shape[2], self.num_blocks, self.block_size)
-
-        out1_real: torch.Tensor = torch.zeros(
-            (batch_size, out.shape[1], out.shape[2], self.num_blocks, self.block_size * self.hidden_size_factor), 
-            device=x.device,
-        )
-        out1_imag: torch.Tensor = torch.zeros(
-            (batch_size, out.shape[1], out.shape[2], self.num_blocks, self.block_size * self.hidden_size_factor), 
-            device=x.device,
-        )
-        out2_real: torch.Tensor = torch.zeros(out.shape, device=x.device)
-        out2_imag: torch.Tensor = torch.zeros(out.shape, device=x.device)
-
-        total_modes: int = (x_dim * y_dim) // 2 + 1
-        kept_modes: int = int(total_modes * self.hard_thresholding_fraction)
-
-        
-
-        out1_real[:, :, :kept_modes, :, :] = F.relu(
-            torch.einsum('Bxmbi,bio->Bxmbo', out[:, :, :kept_modes, :, :].real, self.w1[0])
-            - torch.einsum('...bi,bio->...bo', out[:, :, :kept_modes, :, :].imag, self.w1[1])
-            + self.b1[0]
-        )
-
-        out1_imag[:, :, :kept_modes] = F.relu(
-            torch.einsum('...bi,bio->...bo', x[:, :kept_modes, :kept_modes].imag, self.w1[0]) + \
-            torch.einsum('...bi,bio->...bo', x[:, :, :kept_modes].real, self.w1[1]) + \
-            self.b1[1]
-        )
-
-        o2_real[:, :, :kept_modes] = (
-            torch.einsum('...bi,bio->...bo', o1_real[:, :, :kept_modes], self.w2[0]) - \
-            torch.einsum('...bi,bio->...bo', o1_imag[:, :, :kept_modes], self.w2[1]) + \
-            self.b2[0]
-        )
-
-        o2_imag[:, :, :kept_modes] = (
-            torch.einsum('...bi,bio->...bo', o1_imag[:, :, :kept_modes], self.w2[0]) + \
-            torch.einsum('...bi,bio->...bo', o1_real[:, :, :kept_modes], self.w2[1]) + \
-            self.b2[1]
-        )
-
-        x = torch.stack([o2_real, o2_imag], dim=-1)
-        x = F.softshrink(x, lambd=self.sparsity_threshold)
-        x = torch.view_as_complex(x)
-        x = x.reshape(B, x.shape[1], x.shape[2], C)
-        x = torch.fft.irfft2(x, s=(H, W), dim=(1, 2), norm="ortho")
-        x = x.reshape(B, N, C)
-        x = x.type(dtype)
-        return x + bias
-
 
 
 if __name__ == '__main__':
@@ -548,20 +418,20 @@ if __name__ == '__main__':
     # self = FNO2d(u_dim=2, x_modes=5, y_modes=5, width=25)
     # y = self(x)
 
-    # self = AdaptiveSpectralConv2d(u_dim=2, x_dim=64, y_dim=64, min_explanation=0.8)
+    # self = AdaptiveSpectralConv2d(u_dim=2, x_res=64, y_res=64, min_explanation=0.8)
     # y = self(x)
 
     x1 = torch.rand(32, 2, 64, 64)
-    x2 = torch.rand(32, 2, 32, 32)
 
     # self = SpectralConv2d(u_dim=x1.shape[1], x_modes=16, y_modes=16)
 
     # y1 = self(x1)
     # y2 = self(x2)
 
-    self = AdaptiveSpectralConv2d(u_dim=x1.shape[1], x_dim=64, y_dim=64, min_explanation=0.8)
+    # self = AdaptiveSpectralConv2d(u_dim=x1.shape[1], x_res=6, y_res=6, min_explanation=0.8)
+    self = AdaptiveFNO2d(u_dim=x1.shape[1], width=18)
 
     y1 = self(x1)
-    y2 = self(x2)
+    # y2 = self(x2)
 
 

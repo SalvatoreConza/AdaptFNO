@@ -1,0 +1,27 @@
+device: cuda
+
+dataset:
+  path: "data/2D/diffusion-reaction/2D_diff-react_NA_NA.h5"
+  input_step: 0
+  target_step: -1
+  resolution: [128, 128]  # (x_res, y_res)
+  n_samples: 900
+  split: [0.8, 0.2]
+
+architecture:
+  u_dim: 2
+  width: 256
+  x_modes: 64
+  y_modes: 64
+  from_checkpoint: null
+
+training:
+  train_batch_size: 16
+  val_batch_size: 16
+  n_epochs: 100
+  learning_rate: 0.00001
+  patience: 10
+  tolerance: 1e-4
+  checkpoint_path: "./.checkpoints"
+
+
