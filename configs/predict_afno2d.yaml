@@ -2,11 +2,11 @@ device: cuda
 
 dataset:
   path: "data/2D/diffusion-reaction/2D_diff-react_NA_NA.h5"
-  input_step: 0
+  input_step: 50
   target_step: -1
-  resolution: [128, 128]  # (x_res, y_res)
-  from_sample: 900
+  resolution: [64, 64]  # (x_res, y_res) or null to keep the original resolution
+  from_sample: 980
   to_sample: 1000
 
 architecture:
-  from_checkpoint: .checkpoints/epoch4.pt
+  from_checkpoint: .checkpoints/epoch100.pt

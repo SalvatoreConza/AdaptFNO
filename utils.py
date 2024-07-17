@@ -359,8 +359,9 @@ def plot_predictions_2d(
         axs[0].imshow(
             gt_field.squeeze(dim=0), 
             aspect=aspect_ratio, origin="lower", 
-            extent=[-1., 1., -1., 1.], cmap=cmap,
+            extent=[-1., 1., -1., 1.], 
             vmin=vmin, vmax=vmax,
+            cmap=cmap, 
         )
         axs[0].set_xticks([])
         axs[0].set_yticks([])
@@ -368,8 +369,9 @@ def plot_predictions_2d(
         axs[1].imshow(
             pred_field.squeeze(dim=0), 
             aspect=aspect_ratio, origin="lower", 
-            extent=[-1., 1., -1., 1.], cmap=cmap,
+            extent=[-1., 1., -1., 1.], 
             vmin=vmin, vmax=vmax,
+            cmap=cmap, 
         )
         axs[1].set_xticks([])
         axs[1].set_yticks([])
@@ -379,7 +381,11 @@ def plot_predictions_2d(
         else:
             axs[1].set_title(f'$prediction$\n${notes[idx]}$', fontsize=20)
             fig.subplots_adjust(left=0.01, right=0.99, bottom=0.05, top=0.85, wspace=0.05)
-        fig.savefig(f"{os.getenv('PYTHONPATH')}/results/{dt.datetime.now().strftime('%Y%m%d%H%M%S')}.png")
+        timestamp: dt.datetime = dt.datetime.now()
+        fig.savefig(
+            f"{os.getenv('PYTHONPATH')}/results/{timestamp.strftime('%Y%m%d%H%M%S')}"
+            f"{timestamp.microsecond // 1000:03d}.png"
+        )
         plt.close(fig)
 
 
@@ -418,15 +424,16 @@ if __name__ == '__main__':
     #     filename='test.png',
     # )
 
+    # TESTING `plot_predictions_2d`:
     from datasets import OneShotDiffReact2d
     from torch.utils.data import Subset, DataLoader
     from processes import loss_function
 
     dataset = OneShotDiffReact2d(
         dataroot='data/2D/diffusion-reaction/2D_diff-react_NA_NA.h5',
-
     )
-    samples = Subset(dataset, indices=[990])
+    subset = Subset(dataset, indices=[990, 995])
+    dataloader = DataLoader(dataset=subset, batch_size=1, shuffle=False)
 
     batch_groundtruths: List[torch.Tensor] = []
     batch_predictions: List[torch.Tensor] = []
@@ -434,9 +441,8 @@ if __name__ == '__main__':
     metrics = Accumulator()
 
     with torch.no_grad():
-        for batch, (batch_inputs, gt_targets) in enumerate(samples, start=1):
-            batch_inputs = batch_inputs.unsqueeze(0)
-            gt_targets = gt_targets.unsqueeze(0)
+        for batch, (batch_inputs, gt_targets) in enumerate(dataloader, start=1):
+            print(batch_inputs.shape)
             pred_targets: torch.Tensor = batch_inputs
             batch_groundtruths.append(gt_targets)
             batch_predictions.append(pred_targets)
@@ -449,7 +455,11 @@ if __name__ == '__main__':
     predictions = torch.cat(batch_predictions, dim=0)
     predictions = (predictions ** 2).sum(dim=1, keepdim=True) ** 0.5
     
-    plot_predictions_2d(groundtruths=groundtruths, predictions=predictions, notes=['MSE: 0.3535, RMSE: 0.3245'])
+    plot_predictions_2d(
+        groundtruths=groundtruths, 
+        predictions=predictions, 
+        notes=['MSE: 0.3535, RMSE: 0.3245', 'MSE: 0.3535, RMSE: 0.3245'],
+    )
     # plot_predictions_2d(groundtruths=groundtruths, predictions=predictions)
 
 

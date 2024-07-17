@@ -14,7 +14,7 @@ class OneShotDiffReact2d(Dataset):
     def __init__(
         self, 
         dataroot: str, 
-        input_step: int = -10, 
+        input_step: int = 0, 
         target_step: int = -1, 
         resolution: Optional[Tuple[int, int]] = None,
         device: torch.device = 'cuda', 

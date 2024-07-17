@@ -344,6 +344,16 @@ class AdaptiveFNO2d(nn.Module):
             in_channels=self.width, out_channels=self.width,
             kernel_size=1,
         )
+        # Fourier Layer 4
+        self.spectral_conv4 = AdaptiveSpectralConv2d(
+            u_dim=width,
+            x_modes=self.x_modes,
+            y_modes=self.y_modes,
+        )
+        self.W4 = nn.Conv2d(
+            in_channels=self.width, out_channels=self.width,
+            kernel_size=1,
+        )
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
         # input dim = [batch_size, u_dim, x_res, y_res)
@@ -399,7 +409,17 @@ class AdaptiveFNO2d(nn.Module):
             f'(batch_size, self.width, self.x_modes, self.y_modes) ' 
             f'= {(batch_size, self.width, self.x_modes, self.y_modes)}'
         )
+        out: torch.Tensor = out1 + out2
+        out: torch.Tensor = F.gelu(out)
 
+        # Block 4
+        out1: torch.Tensor = self.spectral_conv4(out)
+        out2: torch.Tensor = self.W4(out)
+        assert out1.shape == out2.shape, (
+            f'both out1 and out2 must have the same shape as '
+            f'(batch_size, self.width, self.x_modes, self.y_modes) ' 
+            f'= {(batch_size, self.width, self.x_modes, self.y_modes)}'
+        )
         out: torch.Tensor = out1 + out2
         out: torch.Tensor = F.gelu(out)
 

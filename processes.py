@@ -58,8 +58,8 @@ def train(
                 train_rmse=train_metrics['rmse'] / batch,
             )
 
-        # Save checkpoint
-        if checkpoint_path:
+        # Ragularly save checkpoint
+        if checkpoint_path and epoch % 10 == 0:
             checkpoint_saver.save(model, filename=f'epoch{epoch}.pt')
         
         # Reset metric records for next epoch
@@ -78,6 +78,10 @@ def train(
         if early_stopping:
             print('Early Stopped')
             break
+
+    # Save last checkpoint
+    if checkpoint_path:
+        checkpoint_saver.save(model, filename=f'epoch{epoch}.pt')
 
     return model
 
@@ -108,7 +112,7 @@ def predict(model: nn.Module, dataloader: DataLoader) -> None:
     batch_predictions: List[torch.Tensor] = []
     metrics: List[str] = []
     with torch.no_grad():
-        for batch, (batch_inputs, gt_targets) in enumerate(dataloader, start=1):
+        for batch_inputs, gt_targets in dataloader:
             pred_targets: torch.Tensor = model(batch_inputs)
             batch_groundtruths.append(gt_targets)
             batch_predictions.append(pred_targets)
@@ -123,11 +127,7 @@ def predict(model: nn.Module, dataloader: DataLoader) -> None:
     predictions: torch.Tensor = torch.cat(batch_predictions, dim=0)
     predictions: torch.Tensor = (predictions ** 2).sum(dim=1, keepdim=True) ** 0.5
 
-    plot_predictions_2d(
-        groundtruths=groundtruths.to(device=torch.device('cpu')), 
-        predictions=predictions.to(device=torch.device('cpu')),
-        notes=metrics,
-    )
+    plot_predictions_2d(groundtruths=groundtruths, predictions=predictions, notes=metrics)
 
 
 
