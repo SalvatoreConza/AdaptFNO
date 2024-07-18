@@ -207,7 +207,7 @@ class Logger:
     """
     def __init__(
         self, 
-        logfile: str = f"{os.environ['PYTHONPATH']}/.log/{dt.datetime.now().strftime('%Y%m%d%H%M%S')}"
+        logfile: str = f"{os.environ['PYTHONPATH']}/.logs/{dt.datetime.now().strftime('%Y%m%d%H%M%S')}"
     ) -> None:
     
         """
@@ -215,7 +215,7 @@ class Logger:
 
         Parameters:
             - logfile (str, optional): The path to the logfile. 
-            Defaults to a file in the .log directory with the current timestamp.
+            Defaults to a file in the .logs directory with the current timestamp.
         """
         self.logfile: pathlib.Path = pathlib.Path(logfile)
         os.makedirs(name=self.logfile.parent, exist_ok=True)
