@@ -6,7 +6,8 @@ import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
 from torch.optim import Optimizer
 
-from utils import Accumulator, EarlyStopping, Timer, Logger, CheckPointSaver, plot_predictions_2d
+from utils.plotting import plot_predictions_2d
+from utils.training import Accumulator, EarlyStopping, Timer, Logger, CheckpointSaver
 
 
 def loss_function(predictions: torch.Tensor, groundtruth: torch.Tensor) -> torch.Tensor:
@@ -32,7 +33,7 @@ def train(
     early_stopping = EarlyStopping(patience, tolerance)
     timer = Timer()
     logger = Logger()
-    checkpoint_saver = CheckPointSaver(dirpath=checkpoint_path)
+    checkpoint_saver = CheckpointSaver(dirpath=checkpoint_path)
     model.train()
 
     # loop through each epoch

@@ -1,5 +1,4 @@
 import argparse
-import os
 from typing import Tuple, Dict, Any, Optional
 
 import yaml
@@ -9,9 +8,10 @@ import torch.nn as nn
 from torch.utils.data import random_split, Subset
 from torch.optim import Adam
 
-from models import AdaptiveFNO2d
-from datasets import OneShotDiffReact2d
+from models.afno import AdaptiveFNO2d
+from datasets import AutoRegressiveDiffReact2d
 import processes
+
 
 def main(config: Dict[str, Any]) -> None:
     """
@@ -48,7 +48,6 @@ def main(config: Dict[str, Any]) -> None:
         input_step=input_step,
         target_step=target_step,
         resolution=tuple(resolution),
-        device=device,
     )
     subset = Subset(dataset=full_dataset, indices=list(range(n_samples)))
     train_dataset, val_dataset = random_split(

@@ -37,7 +37,6 @@ def main(config: Dict[str, Any]) -> None:
         input_step=input_step,
         target_step=target_step,
         resolution=tuple(resolution),
-        device=device,
     )
     subset = Subset(dataset=full_dataset, indices=list(range(from_sample, to_sample)))
     dataloader = DataLoader(dataset=subset, batch_size=1, shuffle=False)

@@ -1,4 +1,4 @@
-from typing import Tuple, Optional
+from typing import Tuple, List, Dict, Optional
 
 import h5py
 import numpy as np
@@ -17,20 +17,18 @@ class OneShotDiffReact2d(Dataset):
         input_step: int = 0, 
         target_step: int = -1, 
         resolution: Optional[Tuple[int, int]] = None,
-        device: torch.device = 'cuda', 
     ):
         self.dataroot: str = dataroot
         self.input_step: int = input_step
         self.target_step: int = target_step
         self.resolution: Optional[Tuple[int, int]] = resolution
-        self.device: torch.device = device
         self.file = h5py.File(name=dataroot, mode='r')
         self.num_samples = len(self.file.keys())
 
     def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor]:
         key: str = f'{str(idx).zfill(4)}/data'
         data: np.ndarray = np.array(self.file[key])
-        data: torch.Tensor = torch.tensor(data, device=self.device).permute(0, 3, 1, 2)
+        data: torch.Tensor = torch.tensor(data).permute(0, 3, 1, 2)
         
         if self.resolution is not None:
             data: torch.Tensor = self.resize_tensor(tensor=data)
@@ -50,11 +48,63 @@ class OneShotDiffReact2d(Dataset):
         return F.interpolate(tensor, size=self.resolution, mode='bilinear', align_corners=False)
 
 
-if __name__ == '__main__':
-    dataset = OneShotDiffReact2d(dataroot='data/2D/diffusion-reaction/2D_diff-react_NA_NA.h5')
-    dataloader = DataLoader(dataset, batch_size=32, shuffle=True)
-    inputs, targets = next(iter(dataloader))
+class AutoRegressiveDiffReact2d(Dataset):
 
+    def __init__(
+        self,
+        dataroot: str,
+        window_size: int,
+        resolution: Optional[Tuple[int, int]] = None,
+    ):
+        self.dataroot: str = dataroot
+        self.window_size: int = window_size
+        self.resolution: Optional[Tuple[int, int]] = resolution
+        self.file = h5py.File(name=dataroot, mode='r')
+        self.num_samples = len(self.file.keys())
+
+        self.indices: List[Tuple[int, int]] = []
+        for sample_index in range(self.num_samples):
+            for target_timestep in range(self.window_size, 100):
+                self.indices.append((sample_index, target_timestep))
+
+    def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor]:
+        sample_index, target_timestep = self.indices[idx]
+        # find sample index and target timestep
+        key: str = f'{str(sample_index).zfill(4)}/data'
+        input_timesteps = slice(target_timestep - self.window_size, target_timestep, 1)
+        # get full array
+        data: np.ndarray = np.array(self.file[key])
+        # get the input tensor
+        input: torch.Tensor = torch.tensor(data=data[input_timesteps]).permute(0, 3, 1, 2)
+        # get the target tensor
+        target: torch.Tensor = torch.tensor(data=data[[target_timestep]]).permute(0, 3, 1, 2)
+        # resize tensor        
+        if self.resolution is not None:
+            input = self.resize_tensor(input)
+            target = self.resize_tensor(target)
+
+        return input, target
+
+
+    def __len__(self) -> int:
+        return len(self.indices)
+
+    def __del__(self):
+        self.file.close()
+
+    def resize_tensor(self, tensor: torch.Tensor) -> torch.Tensor:
+        """Resize a 4D tensor to the given size (height, width)."""
+        return F.interpolate(tensor, size=self.resolution, mode='bilinear', align_corners=False)
+    
+
+if __name__ == '__main__':
+
+    self = AutoRegressiveDiffReact2d(
+        dataroot='data/2D/diffusion-reaction/2D_diff-react_NA_NA.h5',
+        window_size=5,
+        resolution=None,
+        device=torch.device('cuda')
+    )
 
 
 
