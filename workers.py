@@ -13,20 +13,20 @@ class Trainer:
     def __init__(
         self, 
         model: nn.Module,
+        optimizer: Optimizer,
         train_dataset: Dataset,
         val_dataset: Dataset,
-        optimizer: Optimizer,
         train_batch_size: int,
         val_batch_size: int,
         device: torch.device,
     ):
         super().__init__()
-        self.model: nn.Module = model
+        self.model: nn.Module = model.to(device=device)
+        self.optimizer: Optimizer = optimizer
         self.train_dataset: Dataset = train_dataset
         self.val_dataset: Dataset = val_dataset
         self.train_batch_size: int = train_batch_size
         self.val_batch_size: int = val_batch_size
-        self.optimizer: Optimizer = optimizer
         self.device: torch.device = device
 
         self.train_dataloader = DataLoader(dataset=train_dataset, batch_size=train_batch_size, shuffle=True)
@@ -69,7 +69,7 @@ class Trainer:
 
                 # Accumulate the metrics
                 train_metrics.add(
-                    total_mse_loss=mse_loss.item() * batch_prediction.shape[0], 
+                    total_mse=mse_loss.item() * batch_prediction.shape[0], 
                     n_samples=batch_prediction.shape[0],
                 )
                 timer.end_batch(epoch=epoch)
@@ -77,7 +77,8 @@ class Trainer:
                     epoch=epoch, n_epochs=n_epochs, 
                     batch=batch, n_batches=len(self.train_dataloader), 
                     took=timer.time_batch(epoch, batch), 
-                    train_mse_loss=train_metrics['total_mse_loss'] / train_metrics['n_samples'], 
+                    train_mse=train_metrics['total_mse'] / train_metrics['n_samples'], 
+                    train_rmse=(train_metrics['total_mse'] / train_metrics['n_samples']) ** 0.5, 
                 )
         
             # Ragularly save checkpoint
@@ -92,21 +93,21 @@ class Trainer:
             train_metrics.reset()
             
             # Evaluate
-            val_mse_loss = self.evaluate()
+            val_mse, val_rmse = self.evaluate()
             timer.end_epoch(epoch)
             logger.log(
                 epoch=epoch, n_epochs=n_epochs, 
                 took=timer.time_epoch(epoch), 
-                val_mse_loss=val_mse_loss,
+                val_mse=val_mse, val_rmse=val_rmse,
             )
             print('=' * 20)
 
-            early_stopping(val_mse_loss)
+            early_stopping(val_rmse)
             if early_stopping:
                 print('Early Stopped')
                 break
 
-        # Save last checkpoint
+        # Always save last checkpoint
         if checkpoint_path:
             checkpoint_saver.save(self.model, filename=f'epoch{epoch}.pt')
 
@@ -122,12 +123,14 @@ class Trainer:
                 mse_loss = self.loss_function(input=batch_prediction, target=batch_groundtruth)
                 # Accumulate the val_metrics
                 val_metrics.add(
-                    total_mse_loss=mse_loss.item() * batch_prediction.shape[0],
+                    total_mse=mse_loss.item() * batch_prediction.shape[0],
                     n_samples=batch_prediction.shape[0],
                 )
 
         # Compute the aggregate metrics
-        return val_metrics['total_mse_loss'] / val_metrics['n_samples']
+        val_mse: float = val_metrics['total_mse'] / val_metrics['n_samples']
+        val_rmse: float = val_mse ** 0.5
+        return val_mse, val_rmse
 
 
 class Predictor:
@@ -135,13 +138,15 @@ class Predictor:
     def __init__(self, model: nn.Module, device: torch.device) -> None:
         self.model: nn.Module = model.to(device=device)
         self.device: torch.device = device
+        self.loss_function: nn.Module = nn.MSELoss(reduction='mean')
 
     def predict(self, dataset: Dataset) -> None:
         self.model.eval()
-        dataloader = DataLoader(dataset, batch_size=8, shuffle=False)
+        dataloader = DataLoader(dataset, batch_size=1, shuffle=False) # sample-level method, not batch-level
 
-        batch_predictions: List[torch.Tensor] = []
         batch_groundtruths: List[torch.Tensor] = []
+        batch_predictions: List[torch.Tensor] = []
+        batch_metrics: List[str] = []
 
         with torch.no_grad():
             # Loop through each batch
@@ -149,9 +154,14 @@ class Predictor:
                 batch_input: torch.Tensor = batch_input.to(device=self.device)
                 batch_groundtruth: torch.Tensor = batch_groundtruth.to(device=self.device)
                 batch_prediction: torch.Tensor = self.model(input=batch_input)
+                
+                mse_loss: torch.Tensor = self.loss_function(input=batch_prediction, target=batch_groundtruth)
+                mse: float = mse_loss.item()
+                rmse: float = mse ** 0.5
 
-                batch_predictions.append(batch_prediction)
                 batch_groundtruths.append(batch_groundtruth)
+                batch_predictions.append(batch_prediction)
+                batch_metrics.append(f'MSE: {mse:.4f}, RMSE: {rmse:.4f}')
 
             predictions = torch.cat(tensors=batch_predictions, dim=0).to(device=self.device)
             groundtruths = torch.cat(tensors=batch_groundtruths, dim=0).to(device=self.device)

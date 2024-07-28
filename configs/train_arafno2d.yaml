@@ -2,15 +2,16 @@ device: cuda
 
 dataset:
   path: "data/2D/diffusion-reaction/2D_diff-react_NA_NA.h5"
-  input_step: 50
+  window_size: 5
   target_step: -1
   resolution: [64, 64]  # (x_res, y_res) or null to keep the original resolution
-  n_samples: 980
+  seen_samples: 980
   split: [0.8, 0.2]
 
 architecture:
   u_dim: 2
   width: 256
+  depth: 5
   x_modes: 32
   y_modes: 32
   from_checkpoint: null
@@ -19,9 +20,10 @@ training:
   train_batch_size: 8
   val_batch_size: 8
   n_epochs: 100
-  learning_rate: 0.0001
+  learning_rate: 0.0001   # has no effect if architecture.from_checkpoint is not null
   patience: 5
   tolerance: 1e-4
-  checkpoint_path: "./.checkpoints/afno2d"
+  checkpoint_path: "./.checkpoints/arafno2d"
+  save_frequency: 5
 
 

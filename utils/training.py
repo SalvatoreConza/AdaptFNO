@@ -277,13 +277,15 @@ class CheckpointSaver:
             - model (nn.Module): The class object of the model
             - optimizer_classname (Optimizer): The class object of the optimizer
         """
-        self.dirpath            : pathlib.Path      = pathlib.Path(dirpath)
-        # For model Constructor
-        self.model_classname    : str               = model.__class__.__name__
-        self.model_kwargs       : Dict[str, Any]    = CheckpointSaver._get_constructor_arguments(self.model)
-        # For optimizer Constructor
-        self.optimizer_classname: str               = optimizer.__class__.__name__
-        self.optimizer_kwargs   : Dict[str, Any]    = CheckpointSaver._get_constructor_arguments(self.optimizer)
+        self.dirpath: pathlib.Path = pathlib.Path(dirpath)
+        # For model reconstruction
+        self.model_classname: str = model.__class__.__name__
+        signature: inspect.Signature = inspect.signature(model.__init__)
+        self.model_kwargs: Dict[str, Any] = {
+            p: getattr(model, p) for p in signature.parameters.keys() if p != 'self'
+        }
+        # For optimizer reconstruction
+        self.optimizer_classname: str = optimizer.__class__.__name__
         # ensure the dirpath exists in the file system
         os.makedirs(name=self.dirpath, exist_ok=True)
 
@@ -310,21 +312,11 @@ class CheckpointSaver:
                 },
                 'optimizer': {
                     'classname' : self.optimizer_classname,
-                    'kwargs'    : self.optimizer_kwargs,
                     'states'    : copy.deepcopy(optimizer_states),
                 }
             },
             f=os.path.join(self.dirpath, filename)
         )
-
-    @staticmethod
-    def _get_constructor_arguments(obj: Any):
-        signature: inspect.Signature = inspect.signature(obj.__init__)
-        return {
-            p: getattr(obj, name=p)
-            for p in signature.parameters.keys()
-                if p != 'self'
-        }
 
 
 class CheckpointLoader:
@@ -352,13 +344,10 @@ class CheckpointLoader:
         
         # Optimizer metadata
         self.optimizer_classname: str = self.__checkpoint['optimizer']['classname']
-        if self.optimizer_classname in globals().keys():
-            self.optimizer_kwargs: Dict[str, Any] = self.__checkpoint['optimizer']['kwargs']
-        else:
+        if self.optimizer_classname not in globals().keys():
             raise ImportError(
                 f'{self.optimizer_classname} is not found in the current namespace, you might need to import it first.'
             )
-        self.optimizer_kwargs: Dict[str, Any] = self.__checkpoint['optimizer']['kwargs']
 
     def load(self) -> Tuple[nn.Module, Optimizer]:
         """
@@ -372,93 +361,6 @@ class CheckpointLoader:
         optimizer_states: Dict[str, Any] = self.__checkpoint['optimizer']['states']
         # Load model and optimizer
         model: nn.Module = eval(self.model_classname)(**self.model_kwargs).load_state_dict(model_states)
-        optimizer: Optimizer = eval(self.optimizer_classname)(**self.optimizer_kwargs).load_state_dict(optimizer_states)
+        optimizer: Optimizer = eval(self.optimizer_classname)(params=model.parameters()).load_state_dict(optimizer_states)
         return model, optimizer
-
-
-# if __name__ == '__main__':
-
-    # from datasets import OneShotDiffReact2d
-    # from torch.utils.data import Subset, DataLoader
-    # from processes import loss_function
-
-    # dataset = OneShotDiffReact2d(
-    #     dataroot='data/2D/diffusion-reaction/2D_diff-react_NA_NA.h5',
-    # )
-    # subset = Subset(dataset, indices=[990, 995])
-    # dataloader = DataLoader(dataset=subset, batch_size=1, shuffle=False)
-
-    # batch_groundtruths: List[torch.Tensor] = []
-    # batch_predictions: List[torch.Tensor] = []
-
-    # metrics = Accumulator()
-
-    # with torch.no_grad():
-    #     for batch, (batch_inputs, gt_targets) in enumerate(dataloader, start=1):
-    #         print(batch_inputs.shape)
-    #         pred_targets: torch.Tensor = batch_inputs
-    #         batch_groundtruths.append(gt_targets)
-    #         batch_predictions.append(pred_targets)
-    #         loss: torch.Tensor = loss_function(predictions=pred_targets, groundtruth=gt_targets)
-    #         metrics.add(val_mse=loss.item(), val_rmse=loss.item() ** 0.5)
-
-    # groundtruths = torch.cat(batch_groundtruths, dim=0)
-    # groundtruths = (groundtruths ** 2).sum(dim=1, keepdim=True) ** 0.5
-
-    # predictions = torch.cat(batch_predictions, dim=0)
-    # predictions = (predictions ** 2).sum(dim=1, keepdim=True) ** 0.5
-    
-    # plot_predictions_2d(
-    #     groundtruths=groundtruths, 
-    #     predictions=predictions, 
-    #     notes=['MSE: 0.3535, RMSE: 0.3245', 'MSE: 0.3535, RMSE: 0.3245'],
-    # )
-
-
-    # TEST
-    # from torch.optim import Adam
-    # from models.arafno import AutoRegressiveAdaptiveSpectralConv2d
-    
-    # net = AutoRegressiveAdaptiveSpectralConv2d(window_size=3, u_dim=2, x_modes=12, y_modes=12)
-    # optimizer = Adam(net.parameters(), lr=0.00001)
-
-    # checkpoint_saver = CheckpointSaver(
-    #     dirpath='test_checkpointsaver',
-    #     model_classname=net.__class__.__name__,
-    #     model_kwargs={
-    #         'window_size': net.window_size,
-    #         'u_dim': net.u_dim,
-    #         'x_modes': net.x_modes,
-    #         'y_modes': net.y_modes,
-    #     },
-    #     optimizer_classname=optimizer.__class__.__name__,
-    #     optimizer_kwargs={},
-    # )
-    # checkpoint_saver.save(model_states=net.state_dict(), optimizer_states=optimizer.state_dict(), filename='epoch_test.pt')
-
-    # checkpoint = torch.load('test_checkpointsaver/epoch_test.pt')
-    # model_classname: str = checkpoint['model']['classname']
-    # model_kwargs: Dict[str, Any] = checkpoint['model']['kwargs']
-    # if model_classname in globals().keys():
-    #     net = eval(model_classname)(**model_kwargs)
-    # else:
-    #     raise ImportError(f'{model_classname} is not found in the current namespace, you might need to import it first.')
-
-
-    # from datasets import AutoRegressiveDiffReact2d
-    # from torch.utils.data import DataLoader
-    # dataset = AutoRegressiveDiffReact2d(
-    #     dataroot='data/2D/diffusion-reaction/2D_diff-react_NA_NA.h5',
-    #     window_size=3
-    # )
-    # dataloader = DataLoader(dataset, batch_size=32, shuffle=True)
-    # net = AutoRegressiveAdaptiveSpectralConv2d(window_size=10, u_dim=2, x_modes=64, y_modes=64)
-
-    # x = next(iter(dataloader))[0]
-    # y = net(x)
-    # print(x.shape)
-    # print(y.shape)
-
-
-
 
