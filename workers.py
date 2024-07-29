@@ -2,11 +2,14 @@ from typing import List, Optional
 
 import torch
 import torch.nn as nn
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import Dataset, Subset, DataLoader
 from torch.optim import Optimizer
 
 from utils.training import Accumulator, EarlyStopping, Timer, Logger, CheckpointSaver
 from utils.plotting import plot_predictions_2d
+from utils.functional import compute_velocity_field
+
+from datasets import AutoRegressiveDiffReact2d, MultiStepDiffReact2d
 
 class Trainer:
 
@@ -14,17 +17,16 @@ class Trainer:
         self, 
         model: nn.Module,
         optimizer: Optimizer,
-        train_dataset: Dataset,
-        val_dataset: Dataset,
+        train_dataset: Subset[AutoRegressiveDiffReact2d],
+        val_dataset: Subset[AutoRegressiveDiffReact2d],
         train_batch_size: int,
         val_batch_size: int,
         device: torch.device,
     ):
         super().__init__()
         self.model: nn.Module = model.to(device=device)
-        # TODO: resolve multiple GPUs (uncomments 2 lines below)
-        # if torch.cuda.device_count() > 1:   # multiple GPUs on 1 single node
-        #     self.model: nn.Module = nn.DataParallel(module=self.model)
+        if torch.cuda.device_count() > 1:   # multiple GPUs on 1 single node
+            self.model: nn.Module = nn.DataParallel(module=model)
         
         self.optimizer: Optimizer = optimizer
         self.train_dataset: Dataset = train_dataset
@@ -63,18 +65,22 @@ class Trainer:
             # Loop through each batch
             for batch, (batch_input, batch_groundtruth) in enumerate(self.train_dataloader, start=1):
                 timer.start_batch(epoch, batch)
+                assert batch_input.ndim == 5
+                batch_size, window_size, u_dim, x_res, y_res = batch_input.shape
                 batch_input: torch.Tensor = batch_input.to(device=self.device)
                 batch_groundtruth: torch.Tensor = batch_groundtruth.to(device=self.device)
                 self.optimizer.zero_grad()
                 batch_prediction: torch.Tensor = self.model(input=batch_input)
-                mse_loss = self.loss_function(input=batch_prediction, target=batch_groundtruth)
+                mse_loss = self.loss_function(
+                    input=batch_prediction, target=batch_groundtruth,
+                )
                 mse_loss.backward()
                 self.optimizer.step()
 
                 # Accumulate the metrics
                 train_metrics.add(
-                    total_mse=mse_loss.item() * batch_prediction.shape[0], 
-                    n_samples=batch_prediction.shape[0],
+                    total_mse=mse_loss.item() * batch_size, 
+                    n_samples=batch_size,
                 )
                 timer.end_batch(epoch=epoch)
                 logger.log(
@@ -120,15 +126,19 @@ class Trainer:
         self.model.eval()
         with torch.no_grad():
             # Loop through each batch
-            for batch, (batch_input, batch_groundtruth) in enumerate(self.val_dataloader, start=1):
+            for batch_input, batch_groundtruth in self.val_dataloader:
+                assert batch_input.ndim == 5
+                batch_size, window_size, u_dim, x_res, y_res = batch_input.shape
                 batch_input: torch.Tensor = batch_input.to(device=self.device)
                 batch_groundtruth: torch.Tensor = batch_groundtruth.to(device=self.device)
                 batch_prediction: torch.Tensor = self.model(input=batch_input)
-                mse_loss = self.loss_function(input=batch_prediction, target=batch_groundtruth)
+                mse_loss = self.loss_function(
+                    input=batch_prediction, target=batch_groundtruth,
+                )
                 # Accumulate the val_metrics
                 val_metrics.add(
-                    total_mse=mse_loss.item() * batch_prediction.shape[0],
-                    n_samples=batch_prediction.shape[0],
+                    total_mse=mse_loss.item() * batch_size,
+                    n_samples=batch_size,
                 )
 
         # Compute the aggregate metrics
@@ -140,40 +150,60 @@ class Trainer:
 class Predictor:
 
     def __init__(self, model: nn.Module, device: torch.device) -> None:
-        if torch.cuda.device_count():   # multiple GPUs on 1 single node
-            self.model: nn.Module = nn.DataParallel(module=model).to(device=device)
-        else:
-            self.model: nn.Module = model.to(device=device)
+        self.model: nn.Module = model.to(device=device)
+        if torch.cuda.device_count() > 1:   # multiple GPUs on 1 single node
+            self.model: nn.Module = nn.DataParallel(module=model)
 
         self.device: torch.device = device
         self.loss_function: nn.Module = nn.MSELoss(reduction='mean')
 
-    def predict(self, dataset: Dataset) -> None:
+    def predict(self, dataset: Subset[MultiStepDiffReact2d]) -> None:
         self.model.eval()
         dataloader = DataLoader(dataset, batch_size=1, shuffle=False) # sample-level method, not batch-level
 
         batch_groundtruths: List[torch.Tensor] = []
         batch_predictions: List[torch.Tensor] = []
-        batch_metrics: List[str] = []
+        metric_notes: List[str] = []
 
         with torch.no_grad():
             # Loop through each batch
             for batch_input, batch_groundtruth in dataloader:
+                assert batch_input.ndim == 5
+                batch_size, n_input_timesteps, u_dim, x_res, y_res = batch_input.shape
+                # Move to selected device(s)
                 batch_input: torch.Tensor = batch_input.to(device=self.device)
                 batch_groundtruth: torch.Tensor = batch_groundtruth.to(device=self.device)
-                batch_prediction: torch.Tensor = self.model(input=batch_input)
+                # Make multi-step prediction
+                for t in range(1, dataset.dataset.n_prediction_steps + 1):
+                    batch_prediction: torch.Tensor = self.model(input=batch_input)
+                    assert batch_prediction.shape == (batch_size, 1, u_dim, x_res, y_res)
+                    n_retained_steps: int = n_input_timesteps - 1
+                    batch_input: torch.Tensor = torch.cat(
+                        tensors=[
+                            batch_input[:, -n_retained_steps:, :, :, :,],
+                            batch_prediction,
+                        ],
+                        dim=1
+                    )
                 
+                assert batch_prediction.shape == batch_groundtruth.shape
                 mse_loss: torch.Tensor = self.loss_function(input=batch_prediction, target=batch_groundtruth)
                 mse: float = mse_loss.item()
                 rmse: float = mse ** 0.5
 
                 batch_groundtruths.append(batch_groundtruth)
                 batch_predictions.append(batch_prediction)
-                batch_metrics.append(f'MSE: {mse:.4f}, RMSE: {rmse:.4f}')
+                metric_notes.append(f'MSE: {mse:.4f}, RMSE: {rmse:.4f}')
 
             predictions = torch.cat(tensors=batch_predictions, dim=0).to(device=self.device)
             groundtruths = torch.cat(tensors=batch_groundtruths, dim=0).to(device=self.device)
-            assert predictions.shape == groundtruths.shape
+            assert predictions.shape == groundtruths.shape == (len(dataloader), 1, u_dim, x_res, y_res)
             # Plot the prediction
-            plot_predictions_2d(groundtruths=groundtruths, predictions=predictions)
+            from functools import partial
+            plot_predictions_2d(
+                groundtruths=groundtruths, 
+                predictions=predictions, 
+                notes=metric_notes, 
+                reduction=partial(compute_velocity_field, dim=2),
+            )
 

@@ -1,7 +1,7 @@
 import os
 import pathlib
 import time
-from typing import Optional, Dict, TextIO, Any, Tuple
+from typing import Optional, Dict, TextIO, Any, Tuple, NamedTuple
 from collections import defaultdict
 import datetime as dt
 import copy
@@ -335,32 +335,49 @@ class CheckpointLoader:
 
         # Model metadata
         self.model_classname: str = self.__checkpoint['model']['classname']
-        if self.model_classname in globals().keys():
-            self.model_kwargs: Dict[str, Any] = self.__checkpoint['model']['kwargs']
-        else:
+        self.model_kwargs: Dict[str, Any] = self.__checkpoint['model']['kwargs']
+        
+        # Optimizer metadata
+        self.optimizer_classname: str = self.__checkpoint['optimizer']['classname']
+
+    def load(self, scope: Dict[str, Any]) -> Tuple[nn.Module, Optimizer]:
+        """
+        Load the model and optimizer from the checkpoint.
+
+        Parameters:
+            - scope (Dict[str, Any]): The namespace to look up the model and optimizer object. 
+                It's typically the dictionary output of `globals()` or `locals()`
+        
+        Returns:
+            - Tuple[nn.Module, Optimizer]: The model and optimizer loaded from the checkpoint.
+        """
+        # Check caller's namespace for model object
+        if self.model_classname not in scope.keys():
             raise ImportError(
                 f'{self.model_classname} is not found in the current namespace, you might need to import it first.'
             )
         
-        # Optimizer metadata
-        self.optimizer_classname: str = self.__checkpoint['optimizer']['classname']
-        if self.optimizer_classname not in globals().keys():
+        # Check caller's namespace for optimizer object
+        if self.optimizer_classname not in scope.keys():
             raise ImportError(
                 f'{self.optimizer_classname} is not found in the current namespace, you might need to import it first.'
             )
+        
+        # Instantiate model and optimizer
+        model = eval(self.model_classname, scope)(**self.model_kwargs)
+        optimizer = eval(self.optimizer_classname, scope)(params=model.parameters())
 
-    def load(self) -> Tuple[nn.Module, Optimizer]:
-        """
-        Load the model and optimizer from the checkpoint.
-
-        Returns:
-            - Tuple[nn.Module, Optimizer]: The model and optimizer loaded from the checkpoint.
-        """
-        # Load state_dict of model and optimizer
+        # Load model from model state_dict and check for compatibility
         model_states: Dict[str, Any] = self.__checkpoint['model']['states']
+        model_incompatible_keys: NamedTuple = model.load_state_dict(model_states)   # inplace update
+        if model_incompatible_keys.missing_keys:  # List[str]
+            raise RuntimeError(f'Missing keys from the loaded model checkpoint: {model_incompatible_keys.missing_keys}')
+        if model_incompatible_keys.unexpected_keys: # List[str]
+            raise RuntimeError(f'Unexpected keys found in the loaded model checkpoint: {model_incompatible_keys.unexpected_keys}')
+        
+        # Load optimizer from optimizer state_dict, it's always compatible
         optimizer_states: Dict[str, Any] = self.__checkpoint['optimizer']['states']
-        # Load model and optimizer
-        model: nn.Module = eval(self.model_classname)(**self.model_kwargs).load_state_dict(model_states)
-        optimizer: Optimizer = eval(self.optimizer_classname)(params=model.parameters()).load_state_dict(optimizer_states)
+        optimizer.load_state_dict(optimizer_states) # `load_state_dict` of optimizers always returns None, inplace update
+
         return model, optimizer
 

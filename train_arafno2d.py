@@ -1,5 +1,5 @@
 import argparse
-from typing import Tuple, Dict, Any, Optional
+from typing import List, Tuple, Dict, Any, Optional
 
 import yaml
 
@@ -26,7 +26,7 @@ def main(config: Dict[str, Any]) -> None:
     device: torch.device                = torch.device(config['device'])
     dataset_path: str                   = str(config['dataset']['path'])
     window_size: int                    = int(config['dataset']['window_size'])
-    resolution: Optional[Tuple[int,int]]= config['dataset']['resolution']
+    resolution: Optional[List[int,int]] = config['dataset']['resolution']
     seen_samples: int                   = int(config['dataset']['seen_samples'])
     dataset_split: Tuple[float, float]  = tuple(config['dataset']['split'])
 
@@ -43,8 +43,8 @@ def main(config: Dict[str, Any]) -> None:
     learning_rate: float                = float(config['training']['learning_rate'])
     patience: int                       = int(config['training']['patience'])
     tolerance: int                      = float(config['training']['tolerance'])
-    checkpoint_path: str                = str(config['training']['checkpoint_path'])
-    save_frequency: int                 = str(config['training']['save_frequency'])
+    checkpoint_path: Optional[str]      = config['training']['checkpoint_path']
+    save_frequency: int                 = int(config['training']['save_frequency'])
 
     # Initialize the training datasets
     full_dataset = AutoRegressiveDiffReact2d(

@@ -9,15 +9,15 @@ dataset:
 
 architecture:
   u_dim: 2
-  width: 256
+  width: 64
   depth: 5
   x_modes: 32
   y_modes: 32
   from_checkpoint: null
 
 training:
-  train_batch_size: 64
-  val_batch_size: 8
+  train_batch_size: 16
+  val_batch_size: 4
   n_epochs: 100
   learning_rate: 0.0001   # has no effect if architecture.from_checkpoint is not null
   patience: 5

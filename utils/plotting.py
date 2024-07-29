@@ -1,12 +1,9 @@
 import os
-from typing import Optional
+from typing import List, Tuple, Optional, Callable
 
 import datetime as dt
 import matplotlib.pyplot as plt
 import torch
-
-
-from typing import List, Tuple
 
 
 def plot_2d(
@@ -21,14 +18,10 @@ def plot_2d(
         assert len(timesteps) == len(states)
         state.to(device=torch.device('cpu'))
 
-    u_dim: int = state.shape[0]
-    x_dim: int = state.shape[1]
-    y_dim: int = state.shape[2]
-
+    u_dim, x_dim, y_dim = state.shape
     assert len(dim_names) == u_dim
 
     fig, axs = plt.subplots(len(timesteps), u_dim, figsize=(5 * u_dim, 5 * len(timesteps)))
-
     for t_idx, t in enumerate(timesteps):
         for dim, dim_name in enumerate(dim_names):
             axs[t_idx, dim].imshow(
@@ -49,13 +42,20 @@ def plot_predictions_2d(
     groundtruths: torch.Tensor,
     predictions: torch.Tensor,
     notes: Optional[List[str]] = None,
+    reduction: Callable[[torch.Tensor], torch.Tensor] = None,
 ) -> None:
 
     assert groundtruths.shape == predictions.shape
-    assert groundtruths.ndim == 4
-    assert groundtruths.shape[1] == 1, (
+    assert groundtruths.ndim == 5   # (batch_size, t_dim, u_dim, x_resolution, y_resolution)
+    assert groundtruths.shape[1] == 1, 'Expect `t_dim` to be 1'
+
+    groundtruths: torch.Tensor = reduction(groundtruths)
+    predictions: torch.Tensor = reduction(predictions)
+
+    assert groundtruths.shape[2] == predictions.shape[2] == 1, (
         f'All physical fields must be aggregated to a single field for visualization, '
-        f'got predictions.shape[1]={predictions.shape[1]}'
+        f'got predictions.shape[2]={predictions.shape[2]} and '
+        f'got groundtruths.shape[2]={groundtruths.shape[2]}'
     )
     assert notes is None or len(notes) == groundtruths.shape[0]
 
@@ -65,8 +65,8 @@ def plot_predictions_2d(
     predictions = predictions.to(device=torch.device('cpu'))
 
     # Ensure that the plot respect the tensor's shape
-    x_res: int = groundtruths.shape[2]
-    y_res: int = groundtruths.shape[3]
+    x_res: int = groundtruths.shape[3]
+    y_res: int = groundtruths.shape[4]
     aspect_ratio: float = y_res / x_res
 
     # Set plot configuration
@@ -79,7 +79,7 @@ def plot_predictions_2d(
         pred_field: torch.Tensor = predictions[idx]
         fig, axs = plt.subplots(1, 2, figsize=(10, 5))
         axs[0].imshow(
-            gt_field.squeeze(dim=0),
+            gt_field.squeeze(dim=(0, 1)),
             aspect=aspect_ratio, origin="lower",
             extent=[-1., 1., -1., 1.],
             vmin=vmin, vmax=vmax,
@@ -89,7 +89,7 @@ def plot_predictions_2d(
         axs[0].set_yticks([])
         axs[0].set_title(f'$groundtruth$', fontsize=20)
         axs[1].imshow(
-            pred_field.squeeze(dim=0),
+            pred_field.squeeze(dim=(0, 1)),
             aspect=aspect_ratio, origin="lower",
             extent=[-1., 1., -1., 1.],
             vmin=vmin, vmax=vmax,

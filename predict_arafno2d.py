@@ -6,11 +6,11 @@ import yaml
 
 import torch
 import torch.nn as nn
-from torch.utils.data import random_split, Subset, DataLoader
+from torch.utils.data import Subset
 from torch.optim import Optimizer, Adam
 
 from models.arafno2d import AutoRegressiveAdaptiveFNO2d
-from datasets import AutoRegressiveDiffReact2d
+from datasets import MultiStepDiffReact2d
 from utils.training import CheckpointLoader
 from workers import Predictor
 
@@ -26,28 +26,27 @@ def main(config: Dict[str, Any]) -> None:
     # Parse CLI arguments:
     device: torch.device                = torch.device(config['device'])
     dataset_path: str                   = str(config['dataset']['path'])
-    window_size: int                    = int(config['dataset']['window_size'])
-    resolution: Optional[Tuple[int,int]]= config['dataset']['resolution']
+    input_timesteps: List[int]          = config['dataset']['input_timesteps']
+    target_timestep: int                = int(config['dataset']['target_timestep'])
+    resolution: Optional[List[int, int]]= config['dataset']['resolution']
     from_sample: int                    = int(config['dataset']['from_sample'])
     to_sample: int                      = int(config['dataset']['to_sample'])
     from_checkpoint: str                = str(config['architecture']['from_checkpoint'])
 
     # Initialize the training datasets
-    full_dataset = AutoRegressiveDiffReact2d(
+    full_dataset = MultiStepDiffReact2d(
         dataroot=dataset_path,
-        window_size=window_size,
+        input_timesteps=input_timesteps,
+        target_timestep=target_timestep,
         resolution=tuple(resolution),
     )
     test_dataset = Subset(dataset=full_dataset, indices=list(range(from_sample, to_sample)))
 
     # Load model
-
-    net: nn.Module = torch.load(from_checkpoint)
-    net: nn.Module = net.to(device=device)
+    checkpoint_loader = CheckpointLoader(checkpoint_path=from_checkpoint)
+    net, _ = checkpoint_loader.load(scope=globals())
 
     # Predict
-    checkpoint_loader = CheckpointLoader(checkpoint_path=from_checkpoint)
-    net, _ = checkpoint_loader.load()
     predictor = Predictor(model=net, device=device)
     predictor.predict(dataset=test_dataset)
 
