@@ -23,6 +23,11 @@ class FrequencyLinearTransformation(nn.Module):
         self.weights = nn.Parameter(data=weights)
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
+        batch_size, t_dim, u_dim, x_modes, y_modes = input.shape
+        assert self.t_dim == t_dim
+        assert self.u_dim == u_dim
+        assert self.x_modes == x_modes
+        assert self.y_modes == y_modes
         return torch.einsum("btixy,tioxy->btoxy", input, self.weights)
 
 
@@ -153,8 +158,10 @@ class LiftingLayer(nn.Module):
     def forward(self, input: torch.Tensor) -> torch.Tensor:
         assert input.ndim == 5
         batch_size, window_size, u_dim, x_res, y_res = input.shape
-        assert u_dim == self.in_features
-        return torch.einsum('btixy,io->btoxy', input, self.weights)
+        assert self.in_features == u_dim
+        output: torch.Tensor = torch.einsum('btixy,io->btoxy', input, self.weights)
+        assert output.shape == (batch_size, window_size, self.out_features, x_res, y_res)
+        return output
 
 
 class LayerNormOnDims(nn.Module):

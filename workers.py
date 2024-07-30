@@ -25,9 +25,6 @@ class Trainer:
     ):
         super().__init__()
         self.model: nn.Module = model.to(device=device)
-        if torch.cuda.device_count() > 1:   # multiple GPUs on 1 single node
-            self.model: nn.Module = nn.DataParallel(module=model)
-        
         self.optimizer: Optimizer = optimizer
         self.train_dataset: Dataset = train_dataset
         self.val_dataset: Dataset = val_dataset
@@ -151,9 +148,6 @@ class Predictor:
 
     def __init__(self, model: nn.Module, device: torch.device) -> None:
         self.model: nn.Module = model.to(device=device)
-        if torch.cuda.device_count() > 1:   # multiple GPUs on 1 single node
-            self.model: nn.Module = nn.DataParallel(module=model)
-
         self.device: torch.device = device
         self.loss_function: nn.Module = nn.MSELoss(reduction='mean')
 
