@@ -67,7 +67,7 @@ def plot_predictions_2d(
     # Ensure that the plot respect the tensor's shape
     x_res: int = groundtruths.shape[3]
     y_res: int = groundtruths.shape[4]
-    aspect_ratio: float = y_res / x_res
+    aspect_ratio: float = x_res / y_res
 
     # Set plot configuration
     cmap: str = 'plasma'

@@ -1,4 +1,5 @@
 from typing import List, Optional
+from functools import partial
 
 import torch
 import torch.nn as nn
@@ -17,8 +18,8 @@ class Trainer:
         self, 
         model: nn.Module,
         optimizer: Optimizer,
-        train_dataset: Subset[AutoRegressiveDiffReact2d],
-        val_dataset: Subset[AutoRegressiveDiffReact2d],
+        train_dataset: AutoRegressiveDiffReact2d,
+        val_dataset: AutoRegressiveDiffReact2d,
         train_batch_size: int,
         val_batch_size: int,
         device: torch.device,
@@ -116,7 +117,11 @@ class Trainer:
 
         # Always save last checkpoint
         if checkpoint_path:
-            checkpoint_saver.save(self.model, filename=f'epoch{epoch}.pt')
+            checkpoint_saver.save(
+                model_states=self.model.state_dict(), 
+                optimizer_states=self.optimizer.state_dict(),
+                filename=f'epoch{epoch}.pt',
+            )
 
     def evaluate(self) -> float:
         val_metrics = Accumulator()
@@ -151,7 +156,7 @@ class Predictor:
         self.device: torch.device = device
         self.loss_function: nn.Module = nn.MSELoss(reduction='mean')
 
-    def predict(self, dataset: Subset[MultiStepDiffReact2d]) -> None:
+    def predict(self, dataset: MultiStepDiffReact2d) -> None:
         self.model.eval()
         dataloader = DataLoader(dataset, batch_size=1, shuffle=False) # sample-level method, not batch-level
 
@@ -189,11 +194,10 @@ class Predictor:
                 batch_predictions.append(batch_prediction)
                 metric_notes.append(f'MSE: {mse:.4f}, RMSE: {rmse:.4f}')
 
-            predictions = torch.cat(tensors=batch_predictions, dim=0).to(device=self.device)
-            groundtruths = torch.cat(tensors=batch_groundtruths, dim=0).to(device=self.device)
+            predictions = torch.cat(tensors=batch_predictions, dim=0)
+            groundtruths = torch.cat(tensors=batch_groundtruths, dim=0)
             assert predictions.shape == groundtruths.shape == (len(dataloader), 1, u_dim, x_res, y_res)
             # Plot the prediction
-            from functools import partial
             plot_predictions_2d(
                 groundtruths=groundtruths, 
                 predictions=predictions, 

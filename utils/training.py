@@ -208,7 +208,7 @@ class Logger:
     """
     def __init__(
         self, 
-        logfile: str = f"{os.environ['PYTHONPATH']}/.logs/{dt.datetime.now().strftime('%Y%m%d%H%M%S')}"
+        logfile: str = f".logs/{dt.datetime.now().strftime('%Y%m%d%H%M%S')}"
     ) -> None:
     
         """
@@ -331,7 +331,7 @@ class CheckpointLoader:
             - checkpoint_path (str): The path to the checkpoint file.
         """
         self.checkpoint_path: str = checkpoint_path
-        self.__checkpoint: Dict[str, Any] = torch.load(checkpoint_path)
+        self.__checkpoint: Dict[str, Any] = torch.load(checkpoint_path, weights_only=False)
 
         # Model metadata
         self.model_classname: str = self.__checkpoint['model']['classname']
