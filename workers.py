@@ -174,7 +174,7 @@ class Predictor:
     def __init__(self, model: nn.Module, device: torch.device) -> None:
         self.model: nn.Module = model.to(device=device)
         self.device: torch.device = device
-        self.mse_loss: nn.Module = nn.MSELoss(reduction='mean')
+        self.loss_function: nn.Module = nn.MSELoss(reduction='mean')
 
     def predict(self, dataset: MultiStepDiffReact2d) -> None:
         self.model.eval()
