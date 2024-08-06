@@ -1,18 +1,14 @@
 import argparse
-import os
 from typing import List, Tuple, Dict, Any, Optional
-
 import yaml
 
 import torch
-import torch.nn as nn
-from torch.utils.data import Subset
-from torch.optim import Optimizer, Adam
+from torch.optim import Adam
 
-from models.arafno2d import AutoRegressiveAdaptiveFNO2d
 from datasets import MultiStepDiffReact2d
 from utils.training import CheckpointLoader
 from workers import Predictor
+from models.arafno2d import AutoRegressiveAdaptiveFNO2d
 
 
 def main(config: Dict[str, Any]) -> None:

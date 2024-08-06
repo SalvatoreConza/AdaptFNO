@@ -17,9 +17,8 @@ class FrequencyLinearTransformation(nn.Module):
         self.u_dim: int = u_dim
         self.x_modes: int = x_modes
         self.y_modes: int = y_modes
-        scale: float = t_dim * u_dim * u_dim * x_modes * y_modes
         weights = torch.empty(t_dim, u_dim, u_dim, x_modes, y_modes, dtype=torch.cfloat)
-        nn.init.normal_(weights, mean=0.0, std=1.0 / scale)
+        nn.init.normal_(weights, mean=0.0, std=0.01)
         self.weights = nn.Parameter(data=weights)
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
@@ -36,9 +35,8 @@ class SpectralAggregateLayer(nn.Module):
         self.u_dim: int = u_dim
         self.x_modes: int = x_modes
         self.y_modes: int = y_modes
-        scale: float = u_dim * x_modes * y_modes
         weights: torch.Tensor = torch.empty(u_dim, x_modes, y_modes, dtype=torch.float)
-        nn.init.normal_(weights, mean=0.0, std=1.0 / scale)
+        nn.init.normal_(weights, mean=0.0, std=1.0 / 0.01)
         self.weights = nn.Parameter(weights)
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
@@ -191,7 +189,7 @@ class LayerNormOnDims(nn.Module):
 
 class FeatureNormalization(nn.Module):
 
-    def __init__(self, normalized_shape: Tuple[int,...], dims: Tuple[int, ...]):
+    def __init__(self, normalized_shape: Tuple[int, ...], dims: Tuple[int, ...]):
         super().__init__()
         assert len(normalized_shape) == len(dims)
 

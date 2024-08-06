@@ -5,7 +5,7 @@ import yaml
 
 import torch
 import torch.nn as nn
-from torch.utils.data import random_split, Subset
+from torch.utils.data import random_split
 from torch.optim import Optimizer, Adam
 
 from models.arafno2d import AutoRegressiveAdaptiveFNO2d
@@ -38,6 +38,7 @@ def main(config: Dict[str, Any]) -> None:
     y_modes: int                        = int(config['architecture']['y_modes'])
     from_checkpoint: Optional[str]      = config['architecture']['from_checkpoint']
     
+    lambda_: float                      = float(config['training']['lambda'])
     train_batch_size: int               = int(config['training']['train_batch_size'])
     val_batch_size: int                 = int(config['training']['val_batch_size'])
     n_epochs: int                       = int(config['training']['n_epochs'])
@@ -75,6 +76,7 @@ def main(config: Dict[str, Any]) -> None:
     
     trainer = Trainer(
         model=net, optimizer=optimizer,
+        spectral_regularization_coef=lambda_,
         train_dataset=train_dataset, val_dataset=val_dataset,
         train_batch_size=train_batch_size, val_batch_size=val_batch_size,
         device=device,
@@ -101,3 +103,4 @@ if __name__ == "__main__":
     # Run the main function with the configuration
     main(config)
 
+[]

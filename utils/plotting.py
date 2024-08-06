@@ -59,7 +59,7 @@ def plot_predictions_2d(
     )
     assert notes is None or len(notes) == groundtruths.shape[0]
 
-    os.makedirs(f"{os.getenv('PYTHONPATH')}/results", exist_ok=True)
+    os.makedirs(f"./results", exist_ok=True)
 
     groundtruths = groundtruths.to(device=torch.device('cpu'))
     predictions = predictions.to(device=torch.device('cpu'))
@@ -105,7 +105,7 @@ def plot_predictions_2d(
             fig.subplots_adjust(left=0.01, right=0.99, bottom=0.05, top=0.85, wspace=0.05)
         timestamp: dt.datetime = dt.datetime.now()
         fig.savefig(
-            f"{os.getenv('PYTHONPATH')}/results/{timestamp.strftime('%Y%m%d%H%M%S')}"
+            f"./results/{timestamp.strftime('%Y%m%d%H%M%S')}"
             f"{timestamp.microsecond // 1000:03d}.png"
         )
         plt.close(fig)
