@@ -17,7 +17,8 @@ architecture:
   from_checkpoint: null   # set to null if train from scratch
 
 training:
-  lambda: 0.
+  lambda: 0.001
+  noise_level: 0.01
   train_batch_size: 32
   val_batch_size: 32
   learning_rate: 0.001   # has no effect if architecture.from_checkpoint is given (not null)

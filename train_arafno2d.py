@@ -39,6 +39,7 @@ def main(config: Dict[str, Any]) -> None:
     from_checkpoint: Optional[str]      = config['architecture']['from_checkpoint']
     
     lambda_: float                      = float(config['training']['lambda'])
+    noise_level: float                  = float(config['training']['noise_level'])
     train_batch_size: int               = int(config['training']['train_batch_size'])
     val_batch_size: int                 = int(config['training']['val_batch_size'])
     n_epochs: int                       = int(config['training']['n_epochs'])
@@ -77,6 +78,7 @@ def main(config: Dict[str, Any]) -> None:
     trainer = Trainer(
         model=net, optimizer=optimizer,
         spectral_regularization_coef=lambda_,
+        noise_level=noise_level,
         train_dataset=train_dataset, val_dataset=val_dataset,
         train_batch_size=train_batch_size, val_batch_size=val_batch_size,
         device=device,

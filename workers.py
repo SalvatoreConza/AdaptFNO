@@ -22,6 +22,7 @@ class Trainer:
         model: AutoRegressiveAdaptiveFNO2d,
         optimizer: Optimizer,
         spectral_regularization_coef: float,
+        noise_level: float,
         train_dataset: AutoRegressiveDiffReact2d,
         val_dataset: AutoRegressiveDiffReact2d,
         train_batch_size: int,
@@ -31,6 +32,7 @@ class Trainer:
         self.model: nn.Module = model.to(device=device)
         self.optimizer: Optimizer = optimizer
         self.spectral_regularization_coef: float = spectral_regularization_coef
+        self.noise_level: float = noise_level
         self.train_dataset: Dataset = train_dataset
         self.val_dataset: Dataset = val_dataset
         self.train_batch_size: int = train_batch_size
@@ -70,6 +72,9 @@ class Trainer:
                 assert batch_input.ndim == 5
                 batch_size, window_size, u_dim, x_res, y_res = batch_input.shape
                 batch_input: torch.Tensor = batch_input.to(device=self.device)
+                batch_input: torch.Tensor = (
+                    batch_input + torch.randn(size=batch_input.shape, device=self.device) * batch_input.std() * self.noise_level
+                )
                 batch_groundtruth: torch.Tensor = batch_groundtruth.to(device=self.device)
                 self.optimizer.zero_grad()
                 batch_prediction: torch.Tensor = self.model(input=batch_input)
