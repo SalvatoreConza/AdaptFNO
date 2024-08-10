@@ -303,7 +303,7 @@ class AutoRegressiveAdaptiveFNO2d(nn.Module):
 
 # TEST
 if __name__ == '__main__':
-    from datasets import AutoRegressiveDiffReact2d
+    from legacy.datasets.pdebench import AutoRegressiveDiffReact2d
     from torch.utils.data import DataLoader
     dataset = AutoRegressiveDiffReact2d(
         dataroot='data/2D/diffusion-reaction/2D_diff-react_NA_NA.h5',
