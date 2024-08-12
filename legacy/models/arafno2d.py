@@ -4,7 +4,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from models.modules import (
-    AutoRegressiveAdaptiveSpectralConv2d, 
+    AdaptiveSpectralConv2d, 
     FeatureNormalization, 
     LiftingLayer, 
     LocalLinearTransformation, 
@@ -44,7 +44,7 @@ class AutoRegressiveAdaptiveFNO2d(nn.Module):
         
         for _ in range(depth):
             self.spectral_convolutions.append(
-                AutoRegressiveAdaptiveSpectralConv2d(
+                AdaptiveSpectralConv2d(
                     t_dim=self.window_size, u_dim=self.width, 
                     x_modes=self.x_modes, y_modes=self.y_modes
                 )
@@ -110,7 +110,7 @@ if __name__ == '__main__':
         window_size=10
     )
     dataloader = DataLoader(dataset, batch_size=32, shuffle=True)
-    net = AutoRegressiveAdaptiveSpectralConv2d(t_dim=10, u_dim=2, x_modes=64, y_modes=64)
+    net = AdaptiveSpectralConv2d(t_dim=10, u_dim=2, x_modes=64, y_modes=64)
 
     x = next(iter(dataloader))[0]
     y = net(x)

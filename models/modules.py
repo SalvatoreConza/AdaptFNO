@@ -65,7 +65,7 @@ class TemporalAggregateLayer(nn.Module):
         return output
 
 
-class AutoRegressiveAdaptiveSpectralConv2d(nn.Module):
+class AdaptiveSpectralConv2d(nn.Module):
 
     def __init__(
         self,
@@ -211,4 +211,3 @@ class FeatureNormalization(nn.Module):
         return output
     
 
-    

@@ -18,16 +18,14 @@ class Wind2dERA5(Dataset):
         self,
         dataroot: str,
         pressure_level: int,
-        global_latitude: Tuple[float, float],
-        global_longitude: Tuple[float, float],
-        local_latitude: Tuple[float, float],
-        local_longitude: Tuple[float, float],
-        from_date: str,
-        to_date: str,
+        latitude: Tuple[float, float],
+        longitude: Tuple[float, float],
+        fromdate: str,
+        todate: str,
         bundle_size: int,
-        window_size: int = 1,
-        resolution: Optional[Tuple[int, int]] = None,
-        to_float16: bool = False,
+        window_size: int,
+        resolution: Tuple[int, int],
+        to_float16: bool,
     ):
         
         """
@@ -37,15 +35,13 @@ class Wind2dERA5(Dataset):
         super().__init__()
         self.dataroot: str = dataroot
         self.pressure_level: int = pressure_level
-        self.global_latitude: Tuple[int, int] = global_latitude
-        self.global_longitude: Tuple[int, int] = global_longitude
-        self.local_latitude: Tuple[int, int] = local_latitude
-        self.local_longitude: Tuple[int, int] = local_longitude
-        self.from_date: dt.datetime = dt.datetime.strptime(from_date, '%Y%m%d')
-        self.to_date: dt.datetime = dt.datetime.strptime(to_date, '%Y%m%d')
+        self.latitude: Tuple[int, int] = latitude
+        self.longitude: Tuple[int, int] = longitude
+        self.fromdate: dt.datetime = dt.datetime.strptime(fromdate, '%Y%m%d')
+        self.todate: dt.datetime = dt.datetime.strptime(todate, '%Y%m%d')
         self.bundle_size: int = bundle_size
         self.window_size: int = window_size
-        self.resolution: Optional[Tuple[int, int]] = resolution
+        self.resolution: Tuple[int, int] = resolution
         self.to_float16: bool = to_float16
 
         if 24 % self.bundle_size != 0:
@@ -55,7 +51,7 @@ class Wind2dERA5(Dataset):
         self.filenames: List[str] = sorted([
             name for name in os.listdir(self.datafolder)
             if name.endswith('.grib')
-            and self.from_date <= dt.datetime.strptime(name.replace('.grib',''), '%Y%m%d') <= self.to_date
+            and self.fromdate <= dt.datetime.strptime(name.replace('.grib',''), '%Y%m%d') <= self.todate
         ])
         self.in_timesteps: int = self.bundle_size * self.window_size
         self.out_timesteps: int = self.bundle_size
@@ -63,7 +59,7 @@ class Wind2dERA5(Dataset):
         self.n_bundles: int = math.ceil(self.total_timesteps / self.bundle_size)
         self.raw_indices: List[Tuple[int, int]] = [(t // 24, t % 24) for t in range(len(self.filenames) * 24)]
 
-    def __getitem__(self, bundle_idx: int) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    def __getitem__(self, bundle_idx: int) -> Tuple[torch.Tensor, torch.Tensor]:
         if bundle_idx >= len(self):
             raise IndexError
         input_slice, output_slice = self._compute_temporal_slices(bundle_idx=bundle_idx)
@@ -71,42 +67,28 @@ class Wind2dERA5(Dataset):
         input_indices: List[int] = self.raw_indices[input_slice]
         output_indices: List[int] = self.raw_indices[output_slice]
         
-        # Get global input
-        global_inputs: List[torch.Tensor] = [
+        inputs: List[torch.Tensor] = [
             self._to_tensor(
                 filename=self.filenames[day_index], 
-                latitude=self.global_latitude, 
-                longitude=self.global_longitude,
+                latitude=self.latitude, 
+                longitude=self.longitude,
             )[hour_index]
             for day_index, hour_index in input_indices
         ]
-        global_input: torch.Tensor = torch.stack(tensors=global_inputs, dim=0)
-        del global_inputs
+        input: torch.Tensor = torch.stack(tensors=inputs, dim=0)
+        del inputs
 
-        # Get local input
-        local_inputs: List[torch.Tensor] = [
+        outputs: List[torch.Tensor] = [
             self._to_tensor(
                 filename=self.filenames[day_index], 
-                latitude=self.local_latitude, 
-                longitude=self.local_longitude,
-            )[hour_index]
-            for day_index, hour_index in input_indices
-        ]
-        local_input: torch.Tensor = torch.stack(tensors=local_inputs, dim=0)
-        del local_inputs
-
-        # Get local output
-        local_outputs: List[torch.Tensor] = [
-            self._to_tensor(
-                filename=self.filenames[day_index], 
-                latitude=self.local_latitude, 
-                longitude=self.local_longitude
+                latitude=self.latitude, 
+                longitude=self.longitude
             )[hour_index]
             for day_index, hour_index in output_indices
         ]
-        local_output: torch.Tensor = torch.stack(tensors=local_outputs, dim=0)
-        del local_outputs
-        return global_input, local_input, local_output
+        output: torch.Tensor = torch.stack(tensors=outputs, dim=0)
+        del outputs
+        return input, output
 
     def __len__(self) -> int:
         return self.n_bundles - self.window_size
@@ -124,14 +106,16 @@ class Wind2dERA5(Dataset):
         )
         data: torch.Tensor = torch.tensor(data=dataset.to_dataarray().values)
         assert data.ndim == 4
-
+        # Convert to shape (timesteps, 2, *self.resolution)
+        data: torch.Tensor = data.permute(1, 0, 2, 3)
+        # Transform resolution
+        data: torch.Tensor = F.interpolate(
+            input=data, size=self.resolution, mode='bicubic',
+        )
         if self.to_float16: 
             data: torch.Tensor = data.to(dtype=torch.half)
         
-        data: torch.Tensor = F.interpolate(
-            input=data, size=self.resolution, mode='bicubic', align_corners=False,
-        )
-        return data.permute(1, 0, 2, 3) # (timesteps, 2, latitude, longitude)
+        return data
         
     def _compute_temporal_slices(self, bundle_idx: int) -> Tuple[slice, slice]:
         left_idx: int = bundle_idx * self.bundle_size
@@ -146,12 +130,10 @@ if __name__ == '__main__':
     self = Wind2dERA5(
         dataroot='data/2d/era5/wind',
         pressure_level=1000,
-        global_latitude=(90, -90),
-        global_longitude=(0, 360),
-        local_latitude=(10, -10),
-        local_longitude=(160, 200),
-        from_date='20230101',
-        to_date='20230102',
+        latitude=(10, -10),
+        longitude=(160, 200),
+        fromdate='20230101',
+        todate='20230102',
         bundle_size=6,
         window_size=2,
         resolution=(64, 64),

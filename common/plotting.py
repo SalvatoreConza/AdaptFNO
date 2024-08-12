@@ -7,35 +7,54 @@ import torch
 
 
 def plot_2d(
-    *states: Tuple[torch.Tensor],
-    timesteps: List[int],
-    dim_names: List[str],
-    filename: str,
-):
+    batch_field: torch.Tensor,
+    reduction: Callable[[torch.Tensor], torch.Tensor] = None,
+) -> None:
+    
+    assert batch_field.ndim == 5   # (batch_size, t_dim, u_dim, x_resolution, y_resolution)
+    assert batch_field.shape[1] == 1, 'Expect `t_dim` to be 1'
 
-    for state in states:
-        assert state.ndim == 3
-        assert len(timesteps) == len(states)
-        state.to(device=torch.device('cpu'))
+    if reduction is not None:
+        batch_field: torch.Tensor = reduction(batch_field)
 
-    u_dim, x_dim, y_dim = state.shape
-    assert len(dim_names) == u_dim
+    assert batch_field.shape[2] == 1, (
+        f'All physical fields must be aggregated to a single field for visualization, '
+        f'got batch_field.shape[2]={batch_field.shape[2]} and '
+    )
+    # Prepare output directory and move tensor to CPU
+    destination_directory: str = './plots'
+    os.makedirs(destination_directory, exist_ok=True)
+    batch_field: torch.Tensor = batch_field.to(device=torch.device('cpu'))
 
-    fig, axs = plt.subplots(len(timesteps), u_dim, figsize=(5 * u_dim, 5 * len(timesteps)))
-    for t_idx, t in enumerate(timesteps):
-        for dim, dim_name in enumerate(dim_names):
-            axs[t_idx, dim].imshow(
-                states[t_idx][dim],
-                aspect="auto",
-                origin="lower",
-                extent=[-1., 1., -1., 1.],
-            )
-            axs[t_idx, dim].set_xticks([])
-            axs[t_idx, dim].set_yticks([])
-            axs[t_idx, dim].set_title(f"${dim_name}(t={t})$", fontsize=40)
+    # Ensure that the plot respect the tensor's shape
+    x_res: int = batch_field.shape[3]
+    y_res: int = batch_field.shape[4]
+    aspect_ratio: float = x_res / y_res
 
-    plt.subplots_adjust(left=0.05, right=0.95, bottom=0.01, top=0.99, wspace=0.2, hspace=0.25)
-    plt.savefig(filename)
+    # Set plot configuration
+    cmap: str = 'gist_earth'
+
+    for idx in range(batch_field.shape[0]):
+        field: torch.Tensor = batch_field[idx]
+        figwidth: float = 10.
+        fig, ax = plt.subplots(figsize=(figwidth, figwidth * aspect_ratio))
+        ax.imshow(
+            field.squeeze(dim=(0, 1)).rot90(k=2).flip(dims=(1,)),
+            origin="lower",
+            vmin=field.min().item(), vmax=field.max().item(),
+            cmap=cmap,
+        )
+        ax.set_title(f'$groundtruth$', fontsize=15)
+        
+        # fig.subplots_adjust(left=0.01, right=0.99, bottom=0.05, top=0.90, wspace=0.05)
+        fig.tight_layout()
+        timestamp: dt.datetime = dt.datetime.now()
+        fig.savefig(
+            f"{destination_directory}/{timestamp.strftime('%Y%m%d%H%M%S')}"
+            f"{timestamp.microsecond // 1000:03d}.png"
+        )
+        plt.close(fig)    
+
 
 
 def plot_predictions_2d(
@@ -48,9 +67,10 @@ def plot_predictions_2d(
     assert groundtruths.shape == predictions.shape
     assert groundtruths.ndim == 5   # (batch_size, t_dim, u_dim, x_resolution, y_resolution)
     assert groundtruths.shape[1] == 1, 'Expect `t_dim` to be 1'
-
-    groundtruths: torch.Tensor = reduction(groundtruths)
-    predictions: torch.Tensor = reduction(predictions)
+    
+    if reduction is not None:
+        groundtruths: torch.Tensor = reduction(groundtruths)
+        predictions: torch.Tensor = reduction(predictions)
 
     assert groundtruths.shape[2] == predictions.shape[2] == 1, (
         f'All physical fields must be aggregated to a single field for visualization, '
@@ -59,8 +79,9 @@ def plot_predictions_2d(
     )
     assert notes is None or len(notes) == groundtruths.shape[0]
 
-    os.makedirs(f"./results", exist_ok=True)
-
+    # Prepare output directory and move tensor to CPU
+    destination_directory: str = './results'
+    os.makedirs(destination_directory, exist_ok=True)
     groundtruths = groundtruths.to(device=torch.device('cpu'))
     predictions = predictions.to(device=torch.device('cpu'))
 
@@ -70,7 +91,7 @@ def plot_predictions_2d(
     aspect_ratio: float = x_res / y_res
 
     # Set plot configuration
-    cmap: str = 'plasma'
+    cmap: str = 'gist_earth'
     vmin = min(groundtruths.min().item(), predictions.min().item())
     vmax = max(groundtruths.max().item(), predictions.max().item())
 
@@ -79,17 +100,15 @@ def plot_predictions_2d(
         pred_field: torch.Tensor = predictions[idx]
         fig, axs = plt.subplots(1, 2, figsize=(10, 5))
         axs[0].imshow(
-            gt_field.squeeze(dim=(0, 1)),
+            gt_field.squeeze(dim=(0, 1)).rot90(k=2).flip(dims=(1,)),
             aspect=aspect_ratio, origin="lower",
             extent=[-1., 1., -1., 1.],
             vmin=vmin, vmax=vmax,
             cmap=cmap,
         )
-        axs[0].set_xticks([])
-        axs[0].set_yticks([])
         axs[0].set_title(f'$groundtruth$', fontsize=20)
         axs[1].imshow(
-            pred_field.squeeze(dim=(0, 1)),
+            pred_field.squeeze(dim=(0, 1)).rot90(k=2).flip(dims=(1,)),
             aspect=aspect_ratio, origin="lower",
             extent=[-1., 1., -1., 1.],
             vmin=vmin, vmax=vmax,
@@ -105,7 +124,39 @@ def plot_predictions_2d(
             fig.subplots_adjust(left=0.01, right=0.99, bottom=0.05, top=0.85, wspace=0.05)
         timestamp: dt.datetime = dt.datetime.now()
         fig.savefig(
-            f"./results/{timestamp.strftime('%Y%m%d%H%M%S')}"
+            f"{destination_directory}/{timestamp.strftime('%Y%m%d%H%M%S')}"
             f"{timestamp.microsecond // 1000:03d}.png"
         )
         plt.close(fig)
+
+
+# TEST
+if __name__ == '__main__':
+    
+    from functools import partial
+    from torch.utils.data import DataLoader
+    from era5.wind.datasets import Wind2dERA5
+    from common.functional import compute_velocity_field
+    
+    data = Wind2dERA5(
+        dataroot='data/2d/era5/wind',
+        pressure_level=1000,
+        latitude=(90, -90),
+        longitude=(0, 360),
+        fromdate='20240630',
+        todate='20240630',
+        bundle_size=1,
+        window_size=1,
+        resolution=(720, 1440),
+        to_float16=False,
+    )
+    loader = DataLoader(data, batch_size=1000)
+    input, output = next(iter(loader))
+    print(input.shape)
+    print(output.shape)
+
+    plot_2d(batch_field=output, reduction=partial(compute_velocity_field, dim=2))
+
+
+    
+

@@ -8,15 +8,16 @@ import torch.nn as nn
 from torch.utils.data import random_split
 from torch.optim import Optimizer, Adam
 
-from legacy.models.arafno2d import AutoRegressiveAdaptiveFNO2d
-from legacy.datasets.pdebench import AutoRegressiveDiffReact2d
+from models.windnet import GlobalOperator
+from era5.wind.datasets import Wind2dERA5
+
 from common.training import CheckpointLoader
-from legacy.workers import Trainer
+from workers.train import GlobalOperatorTrainer
 
 
 def main(config: Dict[str, Any]) -> None:
     """
-    Main function to train the AFNO2d model.
+    Main function to train Global Operator in WindNet model.
 
     Parameters:
         config (Dict[str, Any]): Configuration dictionary.
@@ -24,16 +25,21 @@ def main(config: Dict[str, Any]) -> None:
 
     # Parse CLI arguments:
     device: torch.device                = torch.device(config['device'])
-    dataset_path: str                   = str(config['dataset']['path'])
+    dataroot: str                       = str(config['dataset']['root'])
+    pressure_level: str                 = int(config['dataset']['pressure_level'])
+    latitude: Tuple[float, float]       = tuple(config['dataset']['latitude'])
+    longitude: Tuple[float, float]      = tuple(config['dataset']['longitude'])
+    fromdate: str                       = str(config['dataset']['fromdate'])
+    todate: str                         = str(config['dataset']['todate'])
+    bundle_size: int                    = int(config['dataset']['bundle_size'])
     window_size: int                    = int(config['dataset']['window_size'])
-    resolution: Optional[List[int,int]] = config['dataset']['resolution']
-    from_sample: int                    = int(config['dataset']['from_sample'])
-    to_sample: int                      = int(config['dataset']['to_sample'])
-    dataset_split: Tuple[float, float]  = tuple(config['dataset']['split'])
+    resolution: Tuple[int, int]         = tuple(config['dataset']['resolution'])
+    to_float16: bool                    = bool(config['dataset']['to_float16'])
+    split: Tuple[float, float]          = tuple(config['dataset']['split'])
 
     u_dim: int                          = int(config['architecture']['u_dim'])
-    depth: int                          = int(config['architecture']['depth'])
     width: int                          = int(config['architecture']['width'])
+    depth: int                          = int(config['architecture']['depth'])
     x_modes: int                        = int(config['architecture']['x_modes'])
     y_modes: int                        = int(config['architecture']['y_modes'])
     from_checkpoint: Optional[str]      = config['architecture']['from_checkpoint']
@@ -42,24 +48,29 @@ def main(config: Dict[str, Any]) -> None:
     noise_level: float                  = float(config['training']['noise_level'])
     train_batch_size: int               = int(config['training']['train_batch_size'])
     val_batch_size: int                 = int(config['training']['val_batch_size'])
-    n_epochs: int                       = int(config['training']['n_epochs'])
     learning_rate: float                = float(config['training']['learning_rate'])
+    n_epochs: int                       = int(config['training']['n_epochs'])
     patience: int                       = int(config['training']['patience'])
     tolerance: int                      = float(config['training']['tolerance'])
     checkpoint_path: Optional[str]      = config['training']['checkpoint_path']
     save_frequency: int                 = int(config['training']['save_frequency'])
 
     # Initialize the training datasets
-    full_dataset = AutoRegressiveDiffReact2d(
-        dataroot=dataset_path,
+    full_dataset = Wind2dERA5(
+        dataroot=dataroot,
+        pressure_level=pressure_level,
+        latitude=latitude,
+        longitude=longitude,
+        fromdate=fromdate,
+        todate=todate,
+        bundle_size=bundle_size,
         window_size=window_size,
-        from_sample=from_sample,
-        to_sample=to_sample,
-        resolution=tuple(resolution) if resolution else None,
+        resolution=resolution,
+        to_float16=to_float16
     )
     train_dataset, val_dataset = random_split(
         dataset=full_dataset,
-        lengths=dataset_split,
+        lengths=split,
     )
 
     # Load model
@@ -68,14 +79,16 @@ def main(config: Dict[str, Any]) -> None:
         net: nn.Module; optimizer: Optimizer
         net, optimizer = checkpoint_loader.load(scope=globals())
     else:
-        net: nn.Module = AutoRegressiveAdaptiveFNO2d(
-            window_size=window_size, u_dim=u_dim, 
+        net: nn.Module = GlobalOperator(
+            in_timesteps=full_dataset.in_timesteps,
+            out_timesteps=full_dataset.out_timesteps,
+            u_dim=u_dim, 
             width=width, depth=depth,
             x_modes=x_modes, y_modes=y_modes,
         )
         optimizer: Optimizer = Adam(params=net.parameters(), lr=learning_rate)
     
-    trainer = Trainer(
+    trainer = GlobalOperatorTrainer(
         model=net, optimizer=optimizer,
         spectral_regularization_coef=lambda_,
         noise_level=noise_level,
@@ -93,7 +106,7 @@ def main(config: Dict[str, Any]) -> None:
 if __name__ == "__main__":
 
     # Initialize the argument parser
-    parser: argparse.ArgumentParser = argparse.ArgumentParser(description='Train the ARAFNO2d model.')
+    parser: argparse.ArgumentParser = argparse.ArgumentParser(description='Train the Global Operator')
     parser.add_argument('--config', type=str, required=True, help='Configuration file name.')
 
     args: argparse.Namespace = parser.parse_args()
@@ -104,6 +117,7 @@ if __name__ == "__main__":
 
     # Run the main function with the configuration
     main(config)
+
 
 
 

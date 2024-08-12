@@ -1,0 +1,38 @@
+device: cuda
+
+dataset:
+  root: "data/2d/era5/wind"
+  pressure_level: 1000
+  latitude: [90, -90]   # (a, b) in the range [90.0, 89.75, 89.5, ..., -89.5, -89.75, -90.0]
+  longitude: [0, 360]   # (a, b) in the range [0.0, 0.25, 0.5, ..., 359.25, 359.5, 359.75]
+  fromdate: '20230101'
+  todate: '20240731'
+  bundle_size: 6
+  window_size: 1
+  resolution: [64, 64]  # [x_res, y_res] or null to keep the original resolution
+  to_float16: false
+  split: [0.8, 0.2]
+
+architecture:
+  u_dim: 2
+  width: 64
+  depth: 4
+  x_modes: 33
+  y_modes: 33
+  from_checkpoint: null   # set to null if train from scratch
+
+training:
+  lambda: 0.001
+  noise_level: 0.01
+  train_batch_size: 32
+  val_batch_size: 4
+  learning_rate: 0.001   # has no effect if architecture.from_checkpoint is given (not null)
+  n_epochs: 100
+  patience: 5
+  tolerance: 0.
+  checkpoint_path: "./.checkpoints/windnet/global"
+  save_frequency: 1
+
+
+
+

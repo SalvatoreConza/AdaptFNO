@@ -69,9 +69,9 @@ class WindByPressureLevels:
 
 if __name__ == '__main__':
 
-    for pressure in [700]:     # [1000, 700, 400, 200, 50]:
+    for pressure in [1000]:     # [1000, 700, 400, 200, 50]:
         self = WindByPressureLevels(pressure_level=pressure, destination_dir='data/2d/era5/wind')
         # self.retrieve_by_date(year=2024, month=7, day=29)
-        self.retrieve_by_range(from_date='20240415', to_date='20240627')
+        self.retrieve_by_range(from_date='20220115', to_date='20221231')
 
 
