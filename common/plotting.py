@@ -138,19 +138,21 @@ if __name__ == '__main__':
     from era5.wind.datasets import Wind2dERA5
     from common.functional import compute_velocity_field
     
-    data = Wind2dERA5(
+    dataset = Wind2dERA5(
         dataroot='data/2d/era5/wind',
         pressure_level=1000,
-        latitude=(90, -90),
-        longitude=(0, 360),
-        fromdate='20240630',
-        todate='20240630',
+        fromdate='20230701',
+        todate='20240731',
+        global_latitude=(90, -90),
+        global_longitude=(0, 360),
+        global_resolution=(128, 256),
+        local_latitude=None,
+        local_longitude=None,
+        local_resolution=None,
         bundle_size=1,
         window_size=1,
-        resolution=(720, 1440),
-        to_float16=False,
     )
-    loader = DataLoader(data, batch_size=1000)
+    loader = DataLoader(dataset, batch_size=1000)
     input, output = next(iter(loader))
     print(input.shape)
     print(output.shape)

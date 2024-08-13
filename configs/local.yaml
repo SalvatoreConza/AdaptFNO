@@ -7,29 +7,29 @@ dataset:
   longitude: [0, 360]   # (a, b) in the range [0.0, 0.25, 0.5, ..., 359.25, 359.5, 359.75]
   fromdate: '20240101'
   todate: '20240731'
-  bundle_size: 6
-  window_size: 1
-  resolution: [128, 128]  # [x_res, y_res] or null to keep the original resolution
+  bundle_size: 6        # should identical to global bundle_size
+  window_size: 1        # should identical to global window_size
+  resolution: [64, 64]  # [x_res, y_res] or null to keep the original resolution
   split: [0.8, 0.2]
 
 architecture:
+  local_checkpoint: null   # set to null if train from scratch
+  global_checkpoint: ".checkpoints/windnet/global/epoch18.pt"
   u_dim: 2
-  width: 64
   depth: 4
   x_modes: 33
   y_modes: 33
-  from_checkpoint: null   # set to null if train from scratch
 
 training:
   lambda: 0.001
   noise_level: 0.01
   train_batch_size: 32
   val_batch_size: 4
-  learning_rate: 0.001   # has no effect if architecture.from_checkpoint is given (not null)
+  learning_rate: 0.001   # has no effect if architecture.local_checkpoint is given (not null)
   n_epochs: 100
   patience: 5
   tolerance: 0.
-  checkpoint_path: "./.checkpoints/global"
+  checkpoint_path: "./.checkpoints/local"
   save_frequency: 1
 
 

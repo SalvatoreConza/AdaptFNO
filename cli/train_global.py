@@ -8,7 +8,7 @@ import torch.nn as nn
 from torch.utils.data import random_split
 from torch.optim import Optimizer, Adam
 
-from models.windnet import GlobalOperator
+from models.operators import GlobalOperator
 from era5.wind.datasets import Wind2dERA5
 
 from common.training import CheckpointLoader
@@ -34,7 +34,6 @@ def main(config: Dict[str, Any]) -> None:
     bundle_size: int                    = int(config['dataset']['bundle_size'])
     window_size: int                    = int(config['dataset']['window_size'])
     resolution: Tuple[int, int]         = tuple(config['dataset']['resolution'])
-    to_float16: bool                    = bool(config['dataset']['to_float16'])
     split: Tuple[float, float]          = tuple(config['dataset']['split'])
 
     u_dim: int                          = int(config['architecture']['u_dim'])
@@ -59,37 +58,37 @@ def main(config: Dict[str, Any]) -> None:
     full_dataset = Wind2dERA5(
         dataroot=dataroot,
         pressure_level=pressure_level,
-        latitude=latitude,
-        longitude=longitude,
         fromdate=fromdate,
         todate=todate,
+        global_latitude=latitude,
+        global_longitude=longitude,
+        global_resolution=resolution,
+        local_latitude=None,
+        local_longitude=None,
+        local_resolution=None,
         bundle_size=bundle_size,
         window_size=window_size,
-        resolution=resolution,
-        to_float16=to_float16
     )
-    train_dataset, val_dataset = random_split(
-        dataset=full_dataset,
-        lengths=split,
-    )
+    train_dataset, val_dataset = random_split(dataset=full_dataset, lengths=split)
 
-    # Load model
+    # Load global operator
     if from_checkpoint is not None:
         checkpoint_loader = CheckpointLoader(checkpoint_path=from_checkpoint)
-        net: nn.Module; optimizer: Optimizer
-        net, optimizer = checkpoint_loader.load(scope=globals())
+        operator: nn.Module; optimizer: Optimizer
+        operator, optimizer = checkpoint_loader.load(scope=globals())
     else:
-        net: nn.Module = GlobalOperator(
-            in_timesteps=full_dataset.in_timesteps,
-            out_timesteps=full_dataset.out_timesteps,
+        operator: GlobalOperator = GlobalOperator(
+            bundle_size=full_dataset.bundle_size,
+            window_size=full_dataset.window_size,
             u_dim=u_dim, 
             width=width, depth=depth,
             x_modes=x_modes, y_modes=y_modes,
         )
-        optimizer: Optimizer = Adam(params=net.parameters(), lr=learning_rate)
-    
+        optimizer: Optimizer = Adam(params=operator.parameters(), lr=learning_rate)
+
+    # Load global trainer    
     trainer = GlobalOperatorTrainer(
-        model=net, optimizer=optimizer,
+        global_operator=operator, optimizer=optimizer,
         spectral_regularization_coef=lambda_,
         noise_level=noise_level,
         train_dataset=train_dataset, val_dataset=val_dataset,
