@@ -31,8 +31,8 @@ def main(config: Dict[str, Any]) -> None:
     local_resolution: Tuple[int, int]   = tuple(config['dataset']['local_resolution'])
     fromdate: str                       = str(config['dataset']['fromdate'])
     todate: str                         = str(config['dataset']['todate'])
+    time_resolution: int                = int(config['dataset']['time_resolution'])
     bundle_size: int                    = int(config['dataset']['bundle_size'])
-    window_size: int                    = int(config['dataset']['window_size'])
 
     from_checkpoint: str                = str(config['local_architecture']['from_checkpoint'])
     global_checkpoint: str              = str(config['global_architecture']['from_checkpoint'])
@@ -67,8 +67,8 @@ def main(config: Dict[str, Any]) -> None:
         local_latitude=local_latitude,
         local_longitude=local_longitude,
         local_resolution=local_resolution,
+        time_resolution=time_resolution,
         bundle_size=bundle_size,
-        window_size=window_size,
     )
     
     local_predictor.predict(dataset=dataset, plot_resolution=plot_resolution)

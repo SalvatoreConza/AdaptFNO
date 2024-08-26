@@ -1,5 +1,5 @@
-
 import torch
+import torch.nn.functional as F
 
 
 def compute_velocity_field(input: torch.Tensor, dim: int) -> torch.Tensor:

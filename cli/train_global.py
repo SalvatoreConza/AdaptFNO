@@ -29,44 +29,62 @@ def main(config: Dict[str, Any]) -> None:
     global_latitude: Tuple[float, float] = tuple(config['dataset']['global_latitude'])
     global_longitude: Tuple[float, float] = tuple(config['dataset']['global_longitude'])
     global_resolution: Tuple[int, int]  = tuple(config['dataset']['global_resolution'])
-    fromdate: str                       = str(config['dataset']['fromdate'])
-    todate: str                         = str(config['dataset']['todate'])
+    train_fromdate: str                 = str(config['dataset']['train_fromdate'])
+    train_todate: str                   = str(config['dataset']['train_todate'])
+    val_fromdate: str                   = str(config['dataset']['val_fromdate'])
+    val_todate: str                     = str(config['dataset']['val_todate'])
+    time_resolution: int                = int(config['dataset']['time_resolution'])
     bundle_size: int                    = int(config['dataset']['bundle_size'])
-    window_size: int                    = int(config['dataset']['window_size'])
-    split: Tuple[float, float]          = tuple(config['dataset']['split'])
+    input_size: int                     = int(config['dataset']['input_size'])
 
-    u_dim: int                          = int(config['global_architecture']['u_dim'])
-    width: int                          = int(config['global_architecture']['width'])
-    depth: int                          = int(config['global_architecture']['depth'])
-    x_modes: int                        = int(config['global_architecture']['x_modes'])
-    y_modes: int                        = int(config['global_architecture']['y_modes'])
-    from_checkpoint: Optional[str]      = config['architecture']['from_checkpoint']
+    in_channels: int                    = int(config['global_architecture']['in_channels'])
+    embedding_dim: int                  = int(config['global_architecture']['embedding_dim'])
+    n_layers: int                       = int(config['global_architecture']['n_layers'])
+    block_size: int                     = int(config['global_architecture']['block_size'])
+    patch_size: int                     = tuple(config['global_architecture']['patch_size'])
+    dropout_rate: float                 = float(config['global_architecture']['dropout_rate'])
+    from_checkpoint: Optional[str]      = config['global_architecture']['from_checkpoint']
     
-    noise_level: float                  = float(config['global_training']['noise_level'])
-    train_batch_size: int               = int(config['global_training']['train_batch_size'])
-    val_batch_size: int                 = int(config['global_training']['val_batch_size'])
-    learning_rate: float                = float(config['global_training']['learning_rate'])
-    n_epochs: int                       = int(config['global_training']['n_epochs'])
-    patience: int                       = int(config['global_training']['patience'])
-    tolerance: int                      = float(config['global_training']['tolerance'])
-    save_frequency: int                 = int(config['global_training']['save_frequency'])
+    noise_level: float                  = float(config['training']['noise_level'])
+    train_batch_size: int               = int(config['training']['train_batch_size'])
+    val_batch_size: int                 = int(config['training']['val_batch_size'])
+    learning_rate: float                = float(config['training']['learning_rate'])
+    n_epochs: int                       = int(config['training']['n_epochs'])
+    patience: int                       = int(config['training']['patience'])
+    tolerance: int                      = float(config['training']['tolerance'])
+    save_frequency: int                 = int(config['training']['save_frequency'])
 
     # Instatiate the training datasets
-    full_dataset = Wind2dERA5(
+    train_dataset = Wind2dERA5(
         dataroot=dataroot,
         pressure_level=pressure_level,
-        fromdate=fromdate,
-        todate=todate,
+        fromdate=train_fromdate,
+        todate=train_todate,
         global_latitude=global_latitude,
         global_longitude=global_longitude,
         global_resolution=global_resolution,
         local_latitude=None,
         local_longitude=None,
         local_resolution=None,
+        time_resolution=time_resolution,
         bundle_size=bundle_size,
-        window_size=window_size,
+        input_size=input_size,
     )
-    train_dataset, val_dataset = random_split(dataset=full_dataset, lengths=split)
+    val_dataset = Wind2dERA5(
+        dataroot=dataroot,
+        pressure_level=pressure_level,
+        fromdate=val_fromdate,
+        todate=val_todate,
+        global_latitude=global_latitude,
+        global_longitude=global_longitude,
+        global_resolution=global_resolution,
+        local_latitude=None,
+        local_longitude=None,
+        local_resolution=None,
+        time_resolution=time_resolution,
+        bundle_size=bundle_size,
+        input_size=input_size,
+    )
 
     # Load global operator
     if from_checkpoint is not None:
@@ -75,11 +93,12 @@ def main(config: Dict[str, Any]) -> None:
         operator, optimizer = checkpoint_loader.load(scope=globals())
     else:
         operator = GlobalOperator(
-            bundle_size=full_dataset.bundle_size,
-            window_size=full_dataset.window_size,
-            u_dim=u_dim, 
-            width=width, depth=depth,
-            x_modes=x_modes, y_modes=y_modes,
+            in_channels=in_channels, embedding_dim=embedding_dim,
+            in_timesteps=train_dataset.in_timesteps, out_timesteps=train_dataset.out_timesteps,
+            n_layers=n_layers,
+            spatial_resolution=global_resolution,
+            block_size=block_size, patch_size=patch_size,
+            dropout_rate=dropout_rate,
         )
         optimizer = Adam(params=operator.parameters(), lr=learning_rate)
 

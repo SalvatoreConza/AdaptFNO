@@ -28,8 +28,8 @@ def main(config: Dict[str, Any]) -> None:
     global_resolution: Tuple[int, int]  = tuple(config['dataset']['global_resolution'])
     fromdate: str                       = str(config['dataset']['fromdate'])
     todate: str                         = str(config['dataset']['todate'])
+    time_resolution: int                = int(config['dataset']['time_resolution'])
     bundle_size: int                    = int(config['dataset']['bundle_size'])
-    window_size: int                    = int(config['dataset']['window_size'])
 
     from_checkpoint: str                = str(config['global_architecture']['from_checkpoint'])
     plot_resolution: Optional[List[int, int]] = config['global_plotting']['plot_resolution']
@@ -57,8 +57,8 @@ def main(config: Dict[str, Any]) -> None:
         local_latitude=None,
         local_longitude=None,
         local_resolution=None,
+        time_resolution=time_resolution,
         bundle_size=bundle_size,
-        window_size=window_size,
     )
 
     global_predictor.predict(dataset=dataset, plot_resolution=plot_resolution)

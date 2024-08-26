@@ -37,7 +37,7 @@ class GlobalOperatorPredictor:
         # Use only the first input from the test dataset:
         global_input: torch.Tensor = next(iter(dataloader))[0].to(device=self.device)
         # Compute how many bundle from last step to keep 
-        n_retained_bundles: int = dataset.window_size - 1   # since each step predicts 1 bundle   
+        n_retained_bundles: int = dataset.bundle_size - 1   # since each step predicts 1 bundle   
 
         # Keep track of groundtruths and predictions
         global_groundtruths: List[torch.Tensor] = []
@@ -113,7 +113,7 @@ class LocalOperatorPredictor:
         global_input: torch.Tensor = first_input[0].to(device=self.device)
         local_input: torch.Tensor = first_input[2].to(device=self.device)
         # Compute how many bundle from last step to keep 
-        n_retained_bundles: int = dataset.window_size - 1   # since each step predicts 1 bundle
+        n_retained_bundles: int = dataset.bundle_size - 1   # since each step predicts 1 bundle
 
         local_groundtruths: List[torch.Tensor] = []
         local_predictions: List[torch.Tensor] = []
@@ -199,8 +199,9 @@ if __name__ == '__main__':
         local_latitude=None,
         local_longitude=None,
         local_resolution=None,
-        bundle_size=12,
-        window_size=1,
+        time_resolution=6,
+        bundle_size=1,
+        input_size=1,
     )
 
     self.predict(dataset=dataset, plot_resolution=(256, 256))

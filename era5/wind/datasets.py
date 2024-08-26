@@ -1,9 +1,7 @@
 import os
-import math
 from typing import Tuple, List, Dict, Literal
 import datetime as dt
-import asyncio
-from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
+import itertools
 
 import xarray as xr
 
@@ -27,8 +25,9 @@ class Wind2dERA5(Dataset):
         local_latitude: Tuple[float, float] | None,
         local_longitude: Tuple[float, float] | None,
         local_resolution: Tuple[int, int] | None,
+        time_resolution: int,
         bundle_size: int,
-        window_size: int,
+        input_size: int,
     ):
         
         """
@@ -47,10 +46,12 @@ class Wind2dERA5(Dataset):
         self.global_longitude: Tuple[int, int] | None = global_longitude
         self.global_resolution: Tuple[int, int] | None = global_resolution
         self.bundle_size: int = bundle_size
-        self.window_size: int = window_size
+        self.time_resolution: int = time_resolution
+        self.input_size: int = input_size
 
-        if 24 % self.bundle_size != 0:
-            raise ValueError(f'bundle_size must be a divisor of 24, got {self.bundle_size}')
+        assert 24 % self.time_resolution == 0 and self.time_resolution <= 24, (
+            f'time_resolution must be a divisor of 24, got {self.time_resolution}'
+        )
 
         self.datafolder: str = f'{dataroot}/{pressure_level}'
         self.filenames: List[str] = sorted([
@@ -58,101 +59,102 @@ class Wind2dERA5(Dataset):
             if name.endswith('.grib')
             and self.fromdate <= dt.datetime.strptime(name.replace('.grib',''), '%Y%m%d') <= self.todate
         ])
-        self.timestamps: List[dt.datetime] = [
-            dt.datetime.strptime(name.replace('.grib','') + str(h).zfill(2), '%Y%m%d%H') 
-            for name in self.filenames 
-                for h in range(24)
-        ]
-        self.in_timesteps: int = self.bundle_size * self.window_size
-        self.out_timesteps: int = self.bundle_size
-        self.total_timesteps: int = len(self.filenames) * 24
-        self.n_bundles: int = math.ceil(self.total_timesteps / self.bundle_size)
-        self.raw_indices: List[Tuple[int, int]] = [(t // 24, t % 24) for t in range(len(self.filenames) * 24)]
+        self.n_days: int = len(self.filenames)
+        self.timesteps_per_day: int = 24 // self.time_resolution
+        self.n_timesteps: int = self.timesteps_per_day * self.bundle_size
+        self.in_timesteps: int = self.timesteps_per_day * self.bundle_size * self.input_size
+        self.out_timesteps: int = self.timesteps_per_day * self.bundle_size
+        self.total_timesteps: int = self.timesteps_per_day * self.n_days
         
         self.has_global: bool = all([global_latitude, global_longitude, global_resolution])
         self.has_local: bool = all([local_latitude, local_longitude, local_resolution])
         assert self.has_global or self.has_local, 'either global or local must be specified'
 
         if self.has_global:
-            self.global_tensors: List[torch.Tensor] = [
-                self._compute_tensor(
+            self.global_tensors: List[torch.Tensor] = []
+            self.global_timestamps: List[List[dt.datetime]] = []
+            for fname in self.filenames:
+                data: torch.Tensor; timestamps: List[dt.datetime]
+                data, timestamps = self._retrieve_data(
                     filename=fname, 
                     latitude=self.global_latitude, longitude=self.global_longitude, 
-                    resolution=global_resolution,
+                    spatial_resolution=self.global_resolution,
                 )
-                for fname in self.filenames
-            ]
-            assert len(self.global_tensors) == len(self.filenames)
+                self.global_tensors.append(data); self.global_timestamps.append(timestamps)
 
         if self.has_local:
-            self.local_tensors: List[torch.Tensor] = [
-                self._compute_tensor(
+            self.local_tensors = List[torch.Tensor] = []
+            self.local_timestamps = List[List[dt.datetime]] = []
+            for fname in self.filenames:
+                data: torch.Tensor; timestamps: List[dt.datetime]
+                data, timestamps = self._retrieve_data(
                     filename=fname, 
                     latitude=self.local_latitude, longitude=self.local_longitude, 
-                    resolution=local_resolution,
+                    spatial_resolution=self.local_resolution,
                 )
-                for fname in self.filenames
-            ]
-            assert len(self.local_tensors) == len(self.filenames)
+                self.local_tensors.append(data); self.local_timestamps.append(timestamps)
 
     def __getitem__(self, bundle_idx: int) -> Tuple[torch.Tensor, ...]:
         if bundle_idx >= len(self):
             raise IndexError
-        
-        input_slice, output_slice = self._compute_temporal_slices(bundle_idx=bundle_idx)
+
+        input_slice, output_slice = self._compute_slices(bundle_idx=bundle_idx)
+
         sample: Tuple[torch.Tensor, ...] = tuple()  # (global_input, global_output, local_input, local_output) 
         if self.has_global:
-            global_input: torch.Tensor = self._stack_tensors(tensors=self.global_tensors, time_slice=input_slice)
-            global_output: torch.Tensor = self._stack_tensors(tensors=self.global_tensors, time_slice=output_slice)
+            global_input: torch.Tensor = torch.cat(tensors=self.global_tensors[input_slice], dim=0)
+            global_output: torch.Tensor = torch.cat(tensors=self.global_tensors[output_slice], dim=0)
             sample += (global_input, global_output)
 
         if self.has_local:
-            local_input: torch.Tensor = self._stack_tensors(tensors=self.local_tensors, time_slice=input_slice)
-            local_output: torch.Tensor = self._stack_tensors(tensors=self.local_tensors, time_slice=output_slice)
+            local_input: torch.Tensor = torch.cat(tensors=self.local_tensors[input_slice], dim=0)
+            local_output: torch.Tensor = torch.cat(tensors=self.local_tensors[output_slice], dim=0)
             sample += (local_input, local_output)
-
-        return sample   
+        
+        return sample
 
     def __len__(self) -> int:
-        return self.n_bundles - self.window_size
-    
+        return (self.n_days - (self.input_size + 1) * self.bundle_size) // self.bundle_size + 1
+
     def compute_timestamp(self, bundle_idx: int) -> Tuple[List[dt.datetime], List[dt.datetime]]:
-        input_slice, output_slice = self._compute_temporal_slices(bundle_idx=bundle_idx)
-        in_timestamps: List[dt.datetime] = self.timestamps[input_slice]
-        out_timestamps: List[dt.datetime] = self.timestamps[output_slice]
+        input_slice, output_slice = self._compute_slices(bundle_idx=bundle_idx)
+        in_timestamps: List[dt.datetime] = list(itertools.chain(*self.global_timestamps[input_slice]))
+        out_timestamps: List[dt.datetime] = list(itertools.chain(*self.global_timestamps[output_slice]))
         return in_timestamps, out_timestamps
 
-    def _compute_tensor(
+    def _compute_slices(self, bundle_idx: int) -> Tuple[slice, slice]:
+        left_index: int = bundle_idx * self.bundle_size
+        mid_index: int = left_index + self.input_size * self.bundle_size
+        right_index: int = mid_index + self.bundle_size
+        return slice(left_index, mid_index, 1), slice(mid_index, right_index, 1)
+
+    def _retrieve_data(
         self, 
         filename: str, 
         latitude: Tuple[float, float], 
         longitude: Tuple[float, float],
-        resolution: Tuple[int, int],
-    ) -> torch.Tensor:
+        spatial_resolution: Tuple[int, int],
+    ) -> Tuple[torch.Tensor, List[dt.datetime]]:
         dataset: xr.Dataset = xr.open_dataset(f'{self.datafolder}/{filename}', engine='cfgrib')
         dataset = dataset.sel(
-            latitude=slice(*latitude), longitude=slice(*longitude)
+            latitude=slice(*latitude), longitude=slice(*longitude),
         )
+        dataset = dataset.isel(time=slice(0, 24, self.time_resolution))
         data: torch.Tensor = torch.tensor(data=dataset.to_dataarray().values)
         # Convert to shape (timesteps, 2, *resolution)
         data = data.permute(1, 0, 2, 3)
         # Transform resolution
         data = F.interpolate(
-            input=data, size=resolution, mode='bicubic',
+            input=data, size=spatial_resolution, mode='bicubic',
         )
-        return data
+        # Retrieve timestamps
+        timestamps: List[dt.datetime] = [
+            dt.datetime.fromtimestamp(t.astype('datetime64[s]').astype(int)) 
+            for t in dataset.valid_time.values
+        ]
+        assert data.shape[0] == len(timestamps)
+        return data, timestamps
 
-    def _compute_temporal_slices(self, bundle_idx: int) -> Tuple[slice, slice]:
-        left_idx: int = bundle_idx * self.bundle_size
-        mid_idx: int = left_idx + self.in_timesteps
-        right_idx: int = mid_idx + self.out_timesteps
-        input_slice = slice(left_idx, mid_idx, 1)
-        output_slice = slice(mid_idx, right_idx, 1)
-        return input_slice, output_slice
-    
-    def _stack_tensors(self, tensors: List[torch.Tensor], time_slice: slice) -> torch.Tensor:
-        indices: List[Tuple[int, int]] = self.raw_indices[time_slice]
-        return torch.stack([tensors[day][hour] for day, hour in indices], dim=0)
 
 
 if __name__ == '__main__':
@@ -162,21 +164,29 @@ if __name__ == '__main__':
         pressure_level=1000,
         fromdate='20240701',
         todate='20240731',
-        bundle_size=6,
-        window_size=2,
         global_latitude=(45, -45),
         global_longitude=(0, 180),
         global_resolution=(128, 128),
         local_latitude=None,
         local_longitude=None,
         local_resolution=None,
+        time_resolution=6,
+        bundle_size=3,
+        input_size=1,
     )
 
     from torch.utils.data import DataLoader
 
-    dataloader = DataLoader(dataset, batch_size=32, num_workers=4)
-    for batch, (input, output) in enumerate(dataloader, start=1):
+    dataloader = DataLoader(dataset, batch_size=1, num_workers=4)
+    for batch, (input, output) in enumerate(dataloader, start=0):
         print(f'Load batch {batch}/{len(dataloader)}')
         print(input.shape)
         print(output.shape)
+        print(dataset.compute_timestamp(bundle_idx=batch))
         print('--------')
+
+    print(len(dataset))
+
+
+
+

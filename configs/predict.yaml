@@ -9,16 +9,16 @@ dataset:
   local_latitude: [30, -10]
   local_longitude: [90, 130]
   local_resolution: [128, 128]
-  fromdate: '20240725'
+  fromdate: '20240701'
   todate: '20240731'
-  bundle_size: 12   # should match train
-  window_size: 1    # should match train
+  time_resolution: 6  # should match train
+  bundle_size: 1      # should match train
 
 global_architecture:
-  from_checkpoint: ".checkpoints/global/1000/epoch500.pt"   # should match train.yaml:/local_architecture.global_checkpoint
+  from_checkpoint: ".checkpoints/global/1000/epoch265.pt"   # should match train.yaml:/local_architecture.global_checkpoint
 
 local_architecture:
-  from_checkpoint: ".checkpoints/local/1000/epoch65.pt"
+  from_checkpoint: ".checkpoints/local/1000/epoch105.pt"
 
 global_plotting:
   plot_resolution: null   # set to null to respect the global_resolution

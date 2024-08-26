@@ -37,7 +37,7 @@ def plot_groundtruths_2d(
     aspect_ratio: float = x_res / y_res
 
     # Set plot configuration
-    cmap: str = 'gist_earth'
+    cmap: str = 'jet'
 
     for idx in range(groundtruths.shape[0]):
         field: torch.Tensor = groundtruths[idx]
@@ -46,7 +46,7 @@ def plot_groundtruths_2d(
         ax.imshow(
             field.squeeze(dim=0).rot90(k=2).flip(dims=(1,)),
             origin="lower",
-            vmin=field.min().item(), vmax=field.max().item(),
+            vmin=0, vmax=field.max().item(),
             cmap=cmap,
         )
         ax.set_title(f'$groundtruth$', fontsize=15)
@@ -102,9 +102,9 @@ def plot_predictions_2d(
     aspect_ratio: float = x_res / y_res
 
     # Set plot configuration
-    cmap: str = 'gist_earth'
-    vmin: float = min(groundtruths.min().item(), predictions.min().item())
-    vmax: float = max(groundtruths.max().item(), predictions.max().item())
+    cmap: str = 'jet'
+    vmin: float = 0.
+    vmax: float = groundtruths.max().item()
 
     for t in range(predictions.shape[0]):
         gt_field: torch.Tensor = groundtruths[t]
@@ -148,23 +148,25 @@ if __name__ == '__main__':
         pressure_level=1000,
         fromdate='20240725',
         todate='20240731',
-        global_latitude=(23, 7),
-        global_longitude=(102, 118),
-        global_resolution=(128, 128),
+        global_latitude=(90, -90),
+        global_longitude=(0, 360),
+        global_resolution=(128, 256),
         local_latitude=None,
         local_longitude=None,
         local_resolution=None,
+        time_resolution=1,  # time resolution must be 1
         bundle_size=1,  # bundle size must be 1
-        window_size=1,  # window size must be 1
+        input_size=1,
     )
     loader = DataLoader(dataset, batch_size=1000)   # only plot 1000 timesteps at max
     input, output = next(iter(loader))
-    input = input.squeeze(1)
-    output = output.squeeze(1)
+    input = input.flatten(0, 1)
+    output = output.flatten(0, 1)
+
     print(input.shape)
     print(output.shape)
 
-    plot_groundtruths_2d(groundtruths=output, reduction=partial(compute_velocity_field, dim=1), resolution=(64, 64))
+    plot_groundtruths_2d(groundtruths=output, reduction=partial(compute_velocity_field, dim=1), resolution=(128, 256))
 
 
     

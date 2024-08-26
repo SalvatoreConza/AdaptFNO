@@ -3,50 +3,43 @@ device: cuda
 dataset:
   root: "data/2d/era5/wind"
   pressure_level: 1000
-  global_latitude: [90, -90]   # (a, b) in the range [90.0, 89.75, 89.5, ..., -89.5, -89.75, -90.0]
-  global_longitude: [0, 360]   # (a, b) in the range [0.0, 0.25, 0.5, ..., 359.25, 359.5, 359.75]
+  global_latitude: [45, -45]   # (a, b) in the range [90.0, 89.75, 89.5, ..., -89.5, -89.75, -90.0]
+  global_longitude: [60, 150]   # (a, b) in the range [0.0, 0.25, 0.5, ..., 359.25, 359.5, 359.75]
   global_resolution: [128, 128]  # [x_res, y_res] or null to keep the original resolution
   local_latitude: [30, -10]
   local_longitude: [90, 130]
   local_resolution: [128, 128]
-  fromdate: '20230101'
-  # fromdate: '20240601'
-  todate: '20240630'
-  bundle_size: 12
-  window_size: 1
-  split: [0.8, 0.2]
+  train_fromdate: '20180101'
+  train_todate: '20221231'
+  val_fromdate: '20231001'
+  val_todate: '20231231'
+  time_resolution: 6  # in hours
+  bundle_size: 1    # in days
+  input_size: 2     # in bundles
 
 global_architecture:
-  u_dim: 2
-  width: 128
-  depth: 4
-  x_modes: 12
-  y_modes: 12
+  in_channels: 2
+  embedding_dim: 1024
+  n_layers: 6
+  block_size: 128
+  patch_size: [4, 4]
+  dropout_rate: 0.5
   from_checkpoint: null   # set to null to train from scratch
 
 local_architecture:
-  x_modes: 12
-  y_modes: 12
-  global_checkpoint: ".checkpoints/global/1000/epoch500.pt"
+  block_size: 16
+  patch_size: [4, 4]
+  n_attention_heads: 8
+  global_checkpoint: ".checkpoints/global/1000/epoch265.pt"
   from_checkpoint: null   # set to null to train from scratch
 
-global_training:
-  noise_level: 0.001
-  train_batch_size: 8
-  val_batch_size: 8
-  learning_rate: 0.0001   # has no effect if global_architecture.from_checkpoint is given (not null)
-  n_epochs: 500
-  patience: 20
-  tolerance: 0.
-  save_frequency: 5
-
-local_training:
-  noise_level: 0.001
+training:
+  noise_level: 0.01
   train_batch_size: 4
   val_batch_size: 4
-  learning_rate: 0.0001   # has no effect if global_architecture.from_checkpoint is given (not null)
+  learning_rate: 0.001   # has no effect if the according `from_checkpoint` is given (not null)
   n_epochs: 500
-  patience: 20
+  patience: 50
   tolerance: 0.
   save_frequency: 5
 

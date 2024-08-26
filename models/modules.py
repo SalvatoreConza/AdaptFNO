@@ -6,339 +6,332 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 
-class FrequencyLinearTransformation(nn.Module):
-
-    """
-    Extended version of Layer R in paper: https://arxiv.org/pdf/2010.08895
-    NOTE: u_dim is d_v in the paper
-    """
-
-    def __init__(self, u_dim: int, x_modes: int, y_modes: int):
-        super().__init__()
-        self.u_dim: int = u_dim
-        self.x_modes: int = x_modes
-        self.y_modes: int = y_modes
-
-        self.scale: float = 1 / (u_dim * u_dim)
-        self.weights1 = nn.Parameter(self.scale * torch.rand(u_dim, u_dim, self.x_modes, self.y_modes, dtype=torch.cfloat))
-        self.weights2 = nn.Parameter(self.scale * torch.rand(u_dim, u_dim, self.x_modes, self.y_modes, dtype=torch.cfloat))
-
-    def forward(self, input: torch.Tensor) -> torch.Tensor:
-        # "Discrete Case and FFT" (page 5) in the paper
-        output: torch.Tensor = torch.zeros(
-            input.shape[0], input.shape[1], self.u_dim, input.shape[-2], input.shape[-1], 
-            dtype=torch.cfloat, device=input.device,
-        )
-        output[:, :, :, :self.x_modes, :self.y_modes] = self.linear_tranform(
-            input[:, :, :, :self.x_modes, :self.y_modes], 
-            self.weights1
-        )
-        output[:, :, :, -self.x_modes:, :self.y_modes] = self.linear_tranform(
-            input[:, :, :, -self.x_modes:, :self.y_modes], 
-            self.weights2
-        )
-        return output
-
-    @staticmethod
-    def linear_tranform(tensor1: torch.Tensor, tensor2: torch.Tensor) -> torch.Tensor:
-        return torch.einsum('btixy,ioxy->btoxy', tensor1, tensor2)
-
-
-class TemporalAggregateLayer(nn.Module):
-
-    def __init__(self, in_timesteps: int, out_timesteps: int):
-        super().__init__()
-        self.in_timesteps: int = in_timesteps
-        self.out_timesteps: int = out_timesteps
-        weights: torch.Tensor = torch.rand(in_timesteps, out_timesteps, dtype=torch.float)
-        self.weights = nn.Parameter(weights)
-
-    def forward(self, input: torch.Tensor) -> torch.Tensor:
-        assert input.ndim == 5
-        assert input.shape[1] == self.in_timesteps
-        batch_size, in_timesteps, u_dim, x_res, y_res = input.shape
-        output: torch.Tensor = torch.einsum("biuxy,io->bouxy", input, self.weights)
-        weight_sum: torch.Tensor = self.weights.sum(dim=0).reshape(1, self.out_timesteps, 1, 1, 1)
-        output = output / weight_sum  # broadcasted to input shape
-        assert output.shape == (batch_size, self.out_timesteps, u_dim, x_res, y_res)
-        return output
-
-
-class TemporalAttention(nn.Module):
+# DONE
+class PatchEmbedding(nn.Module):
 
     def __init__(
         self, 
-        in_timesteps: int, out_timesteps: int, 
-        width: int, 
-        n_heads: int, dropout: float,
+        patch_size: Tuple[int, int], 
+        n_patches: int,
+        in_channels: int, 
+        embedding_dim: int,
     ):
+        """
+        embedding_dim should be large enough compared to the patch size, 
+        the effective embed dim is embedding_dim // prod(patch_size) 
+        """
         super().__init__()
-        self.in_timesteps: int = in_timesteps
-        self.out_timesteps: int = out_timesteps
-        self.width: int = width
-        self.n_heads: int = n_heads
-        self.dropout: float = dropout
-
-        self.attention = nn.MultiheadAttention(
-            embed_dim=self.width,
-            num_heads=self.n_heads,
-            dropout=self.dropout,
-            bias=True,
-        )
-        self.query_projection = nn.Linear(
-            in_features=self.in_timesteps, out_features=self.out_timesteps,
+        self.patch_size: Tuple[int, int] = patch_size
+        self.n_patches: int = n_patches
+        self.in_channels: int = in_channels
+        self.embedding_dim: int = embedding_dim
+        
+        self.projection = nn.Conv2d(
+            in_channels=self.in_channels, out_channels=self.embedding_dim, 
+            kernel_size=self.patch_size, stride=self.patch_size,
         )
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
-        batch_size: int = input.shape[0]
-        x_res, y_res = input.shape[-2:]
         assert input.ndim == 5
-        output: torch.Tensor = input.mean(dim=(-2, -1))
-        assert output.shape == (batch_size, self.in_timesteps, self.width)
+        batch_size, in_timesteps, in_channels, x_resolution, y_resolution = input.shape
+        assert in_channels == self.in_channels
+        output: torch.Tensor = input.flatten(start_dim=0, end_dim=1)
+        output = self.projection(output)
+        output = output.reshape(batch_size, in_timesteps, self.embedding_dim, self.n_patches)
+        return output.permute(0, 1, 3, 2)   # (batch_size, timesteps, n_patches, embedding_dim)
 
-        query: torch.Tensor = self.query_projection(input=output.transpose(1, 2)).permute(2, 0, 1)
-        assert query.shape == (self.out_timesteps, batch_size, self.width)
 
-        # Seft-attention on width and resolution
-        # In each batch, there are `self.out_timesteps` queries and `self.in_timesteps` key-value pairs
-        # Each output timestep attends to different input timesteps
-        # The attention weight for each sample in the batch is in shape (self.out_timesteps, self.in_timesteps)
-        # The attention output for each sample in the batch is in shape (self.out_timesteps, self.width)
-        attention_output: torch.Tensor; attention_weight: torch.Tensor
-        attention_output, attention_weight = self.attention(query=query, key=output, value=output, need_weights=True)
-        assert attention_output.shape == (self.out_timesteps, batch_size, self.width)
-        assert attention_weight.shape == (batch_size, self.out_timesteps, self.in_timesteps)
-        output = torch.einsum('biwxy,boi->bowxy', input, attention_weight)
-        assert output.shape == (batch_size, self.out_timesteps, self.width, x_res, y_res)
+# DONE
+class PositionalEmbedding(nn.Module):
+
+    def __init__(self, embedding_dim: int, n_patches: int):
+        super().__init__()
+        self.embedding_dim: int = embedding_dim
+        self.n_patches: int = n_patches
+        self.weight = nn.Parameter(
+            torch.randn(1, 1, self.n_patches, self.embedding_dim, dtype=torch.float)
+        )
+
+    def forward(self):
+        return self.weight
+
+
+# DONE
+class DropPath(nn.Module):
+    
+    def __init__(self, p: float):
+        super().__init__()
+        self.p = p
+
+    def forward(self, input: torch.Tensor) -> torch.Tensor:
+        if self.p == 0 or not self.training:
+            return input    # same as nn.Identity() in .eval() mode
+        
+        shape: Tuple[int, ...] = (input.shape[0],) + (1,) * (input.ndim - 1)
+        random_tensor: torch.Tensor = (1 - self.p) + torch.rand(shape, dtype=input.dtype, device=input.device)
+        mask: torch.Tensor = random_tensor.floor()
+        output = input.div(1 - self.p) * mask
         return output
 
 
-class TemporalAttention(nn.Module):
+# DONE
+class AFNOLayer(nn.Module):
 
     def __init__(
         self, 
-        in_timesteps: int, out_timesteps: int, 
-        width: int, x_res: int, y_res: int,
-        downsampling_factor: int,
-        n_heads: int, dropout: float,
+        embedding_dim: int, 
+        block_size: int,
+        n_xpatches: int,
+        n_ypatches: int,
+        dropout_rate: float,
     ):
         super().__init__()
-        self.in_timesteps: int = in_timesteps
+        self.embedding_dim: int = embedding_dim
+        self.block_size: int = block_size
+        self.n_xpatches: int = n_xpatches
+        self.n_ypatches: int = n_ypatches
+        self.dropout_rate: float = dropout_rate
+        self.n_blocks: int = self.embedding_dim // self.block_size
+
+        self.scale: float = 0.02
+        self.w1 = nn.Parameter(self.scale * torch.randn(2, self.n_blocks, block_size, block_size))
+        self.b1 = nn.Parameter(self.scale * torch.randn(2, 1, 1, 1, self.n_blocks, block_size))
+        self.w2 = nn.Parameter(self.scale * torch.randn(2, self.n_blocks, block_size, block_size))
+        self.b2 = nn.Parameter(self.scale * torch.randn(2, 1, 1, 1, self.n_blocks, block_size))
+
+        self.ln1 = nn.LayerNorm(normalized_shape=embedding_dim)
+        self.ln2 = nn.LayerNorm(normalized_shape=embedding_dim)
+
+        self.mlp = nn.Sequential(
+            nn.Linear(in_features=embedding_dim, out_features=embedding_dim * 4),
+            nn.GELU(),
+            nn.Dropout(p=dropout_rate),
+            nn.Linear(in_features=embedding_dim * 4, out_features=embedding_dim),
+            nn.Dropout(p=dropout_rate),
+        )
+        self.droppath = DropPath(p=dropout_rate)
+
+    def forward(self, input: torch.Tensor) -> torch.Tensor:
+        assert input.ndim == 4
+        batch_size, n_timesteps, n_patches, embedding_dim = input.shape
+        assert embedding_dim == self.embedding_dim
+        assert n_patches == self.n_xpatches * self.n_ypatches
+
+        residual: torch.Tensor = input
+        input = self.ln1(input)
+
+        # Reshape input back to 2D in spatial domain
+        reshaped_input: torch.Tensor = input.reshape(
+            batch_size, n_timesteps, self.n_xpatches, self.n_ypatches, embedding_dim
+        )
+        # Fourier transform (Token mixing)
+        fourier_coeff: torch.Tensor = torch.fft.rfft2(input=reshaped_input, dim=(2, 3), norm="ortho")
+        # Linear transformation with shared weight (Channel mixing)
+        x_modes = fourier_coeff.shape[2]
+        y_modes = fourier_coeff.shape[3]
+        assert (x_modes, y_modes) == (self.n_xpatches, self.n_ypatches // 2 + 1)
+
+        fourier_coeff: torch.Tensor = fourier_coeff.reshape(
+            batch_size, n_timesteps, x_modes, y_modes, self.n_blocks, self.block_size
+        )
+
+        output1_real = torch.zeros(fourier_coeff.shape, device=input.device)
+        output1_imag = torch.zeros(fourier_coeff.shape, device=input.device)
+        output2_real = torch.zeros(fourier_coeff.shape, device=input.device)
+        output2_imag = torch.zeros(fourier_coeff.shape, device=input.device)
+
+        total_modes: int = y_modes
+        kept_modes: int = 12
+
+        value_slice: Tuple[slice, ...] = (
+            slice(None),                                                # batch_size
+            slice(None),                                                # n_timesteps
+            slice(total_modes - kept_modes, total_modes + kept_modes),  # x_modes
+            slice(None, kept_modes),                                    # y_modes
+            slice(None),                                                # n_blocks
+            slice(None),                                                # block_size
+        )
+        ops: str = 'btxyni,nio->btxyno'
+        output1_real[value_slice] = F.gelu(
+            torch.einsum(ops, fourier_coeff[value_slice].real, self.w1[0]) 
+            - torch.einsum(ops, fourier_coeff[value_slice].imag, self.w1[1]) 
+            + self.b1[0]
+        )
+        output1_imag[value_slice] = F.gelu(
+            torch.einsum(ops, fourier_coeff[value_slice].imag, self.w1[0]) 
+            + torch.einsum(ops, fourier_coeff[value_slice].real, self.w1[1]) 
+            + self.b1[1]
+        )
+        output2_real[value_slice] = (
+            torch.einsum(ops, output1_real[value_slice], self.w2[0]) 
+            - torch.einsum(ops, output1_imag[value_slice], self.w2[1]) 
+            + self.b2[0]
+        )
+        output2_imag[value_slice] = (
+            torch.einsum(ops, output1_imag[value_slice], self.w2[0]) 
+            + torch.einsum(ops, output1_real[value_slice], self.w2[1]) 
+            + self.b2[1]
+        )
+        output: torch.Tensor = torch.stack([output2_real, output2_imag], dim=-1)
+        output = F.softshrink(output, lambd=0.01)
+        output = torch.view_as_complex(output)
+        output = output.reshape(batch_size, n_timesteps, x_modes, y_modes, embedding_dim)
+
+        # Inverse Fourier transform (Token demixing)
+        output: torch.Tensor = torch.fft.irfft2(
+            input=output, 
+            s=(self.n_xpatches, self.n_ypatches),
+            dim=(2, 3), 
+            norm="ortho",
+        )
+        assert output.shape == (
+            batch_size, n_timesteps, self.n_xpatches, self.n_ypatches, embedding_dim
+        )
+        # Reshape input back to 1D in spatial domain
+        output = output.reshape(input.shape)
+        output = output + input
+        # Skip connection
+        output = output + residual
+        residual = output
+        # MLP
+        output = self.ln2(output)
+        output = self.mlp(output)
+        assert output.shape == input.shape
+        # Skip connection + Drop path
+        output = self.droppath(output) + residual
+        return output   # output.shape == input.shape
+
+
+# DONE
+class LinearDecoder(nn.Module):
+
+    def __init__(
+        self, 
+        in_channels: int,
+        out_channels: int,
+        in_timesteps: int,
+        out_timesteps: int,
+        n_xpatches: int,
+        n_ypatches: int,
+        patch_size: Tuple[int, int],
+        dropout_rate: float
+    ):
+        super().__init__()
+        self.in_channels: int = in_channels
+        self.out_channels: int = out_channels
         self.out_timesteps: int = out_timesteps
-        self.width: int = width
-        self.x_res: int = x_res
-        self.y_res: int = y_res
+        self.n_xpatches: int = n_xpatches
+        self.n_ypatches: int = n_ypatches
+        self.patch_size: Tuple[int, int] = patch_size
+        self.x_resolution: int = patch_size[0] * n_xpatches
+        self.y_resolution: int = patch_size[1] * n_ypatches
+        self.n_patches: int = self.n_xpatches * self.n_ypatches
+        self.dropout = nn.Dropout(p=dropout_rate)
+
+        self.temporal_decoder = nn.Sequential(
+            nn.Linear(
+                in_features=in_timesteps,
+                out_features=out_timesteps,
+            ),
+            nn.GELU(),
+            self.dropout,
+        )
+        self.spatial_decoder = nn.Linear(
+            in_features=self.in_channels,
+            out_features=self.out_channels * self.patch_size[0] * self.patch_size[1],
+        )
+
+    def forward(self, input: torch.Tensor) -> torch.Tensor:
+        assert input.ndim == 4
+        batch_size, n_timesteps = input.shape[:2]
+        assert (batch_size, n_timesteps, self.n_patches, self.in_channels) == input.shape
+        # Temporal decoding
+        output: torch.Tensor = self.temporal_decoder(input.permute(0, 2, 3, 1))
+        output = output.permute(0, 3, 1, 2) # batch_size, n_timesteps, self.n_patches, self.in_channels
+        # Spatial decoding
+        output = self.spatial_decoder(output)
+        # Reshape
+        output = output.flatten(start_dim=2)
+        assert output.shape == (
+            batch_size, self.out_timesteps, self.n_patches * self.out_channels * self.patch_size[0] * self.patch_size[1]
+        )
+        output = output.reshape(
+            batch_size, self.out_timesteps, self.out_channels, self.x_resolution, self.y_resolution
+        )
+        return output
+
+
+# DONE
+class GlobalAttention(nn.Module):
+
+    def __init__(
+        self, 
+        embedding_dim: int, 
+        n_heads: int,
+    ):
+        super().__init__()
+        self.embedding_dim: int = embedding_dim
         self.n_heads: int = n_heads
-        self.dropout: float = dropout
-
-        self.downsampling_factor: int = downsampling_factor
-        self.downsampled_x_res: int = self.x_res // self.downsampling_factor
-        self.downsampled_y_res: int = self.y_res // self.downsampling_factor
-        self.n: int = int(math.log2(self.downsampling_factor))
-
-        self.embedding_dim: int = self.width * self.downsampled_x_res * self.downsampled_y_res
 
         self.attention = nn.MultiheadAttention(
             embed_dim=self.embedding_dim,
             num_heads=self.n_heads,
-            dropout=self.dropout,
+            dropout=0.1,
             bias=True,
         )
-        self.query_projection = nn.Linear(
-            in_features=self.in_timesteps, out_features=self.out_timesteps,
-        )
-        # equivalent to applying Conv2d with kernel_size=2, stride=2, padding=0 with no activations `n` times
-        self.spatial_conv = nn.Conv2d(
-            in_channels=self.in_timesteps * self.width,
-            out_channels=self.in_timesteps * self.width,
-            kernel_size=2 + (self.n - 1), # k_effective = k + (n - 1) * (k - 1)
-            stride=2 ** self.n, # s_effective = s ** n
-            padding=0 * self.n, # p_effective = p * n
-            bias=False,
-        )
 
-    def forward(self, input: torch.Tensor) -> torch.Tensor:
-        batch_size: int = input.shape[0]
-        assert input.ndim == 5
-        assert input.shape == (batch_size, self.in_timesteps, self.width, self.x_res, self.y_res)
+    def forward(
+        self, 
+        global_context: torch.Tensor, 
+        local_context: torch.Tensor,
+    ) -> torch.Tensor:
+        assert global_context.ndim == local_context.ndim == 4
+        assert global_context.shape[:2] == local_context.shape[:2]
+        batch_size, n_timesteps = local_context.shape[:2]
+        assert global_context.shape[-1] == local_context.shape[-1] == self.embedding_dim
+        # NOTE: global_context and local_context may have diferent number of patches
 
-        output: torch.Tensor = input.reshape(batch_size, self.in_timesteps * self.width, self.x_res, self.y_res)
-        output = self.spatial_conv(input=output)
-        output = output.reshape(batch_size, self.in_timesteps, self.embedding_dim)
-        output = output.transpose(1, 0) # (self.in_timesteps, batch_size, embedding_dim)
+        global_context_reshaped: torch.Tensor = self._transform_shape(input=global_context)
+        local_context_reshape: torch.Tensor = self._transform_shape(input=local_context)
+        output: torch.Tensor = self.attention(
+            query=local_context_reshape, 
+            key=global_context_reshaped,
+            value=global_context_reshaped,
+            need_weights=False, # to save significant memory for large sequence length
+        )[0]
+        assert output.shape == global_context.shape == local_context.shape
 
-        query: torch.Tensor = self.query_projection(input=output.transpose(0, 2)).transpose(0, 2)
-        assert query.shape == (self.out_timesteps, batch_size, self.embedding_dim)
-
-        # Seft-attention on width and resolution
-        # In each batch, there are `self.out_timesteps` queries and `self.in_timesteps` key-value pairs
-        # Each output timestep attends to different input timesteps
-        # The attention weight for each sample in the batch is in shape (self.out_timesteps, self.in_timesteps)
-        # The attention output for each sample in the batch is in shape (self.out_timesteps, self.width)
-        attention_output: torch.Tensor; attention_weight: torch.Tensor
-        attention_output, attention_weight = self.attention(query=query, key=output, value=output, need_weights=True)
-        assert attention_output.shape == (self.out_timesteps, batch_size, self.embedding_dim)
-        assert attention_weight.shape == (batch_size, self.out_timesteps, self.in_timesteps)
-        output = torch.einsum('biwxy,boi->bowxy', input, attention_weight)
-        assert output.shape == (batch_size, self.out_timesteps, self.width, self.x_res, self.y_res)
-        return output
-
-
-class AdaptiveSpectralConv2d(nn.Module):
-
-    def __init__(
-        self, u_dim: int, x_modes: int, y_modes: int):
-        """
-        Adaptive 2D Fourier layer. It does FFT, linear transform, and Inverse FFT.
-        """
-        super().__init__()
-        self.u_dim: int = u_dim
-        self.x_modes: int = x_modes
-        self.y_modes: int = y_modes
-
-        self.R = FrequencyLinearTransformation(u_dim=u_dim, x_modes=x_modes, y_modes=y_modes)
-
-    def forward(self, input: torch.Tensor) -> torch.Tensor:
-        assert input.ndim == 5
-        assert input.shape[2] == self.u_dim
-
-        # Fourier coeffcients
-        fourier_coeff: torch.Tensor = torch.fft.rfftn(input=input, dim=(3, 4))
-        # Linear transformation
-        fourier_coeff = self.R(input=fourier_coeff)
-        # Inverse Fourier transform
-        output: torch.Tensor = torch.fft.irfftn(
-            input=fourier_coeff, 
-            dim=(3, 4), 
-            s=(input.shape[-2], input.shape[-1]), 
-        )
-        assert output.shape == input.shape
-        return output
-
-
-class LocalLinearTransformation(nn.Module):
-
-    """
-    Extended version of Layer W in paper: https://arxiv.org/pdf/2010.08895
-    """
-
-    def __init__(self, u_dim: int):
-        super().__init__()
-        self.u_dim: int = u_dim
-        self.scale: float = 1 / (u_dim * u_dim)
-        weights: torch.Tensor = self.scale * torch.rand(self.u_dim, self.u_dim)
-        self.weights = nn.Parameter(weights)
-
-    def forward(self, input: torch.Tensor) -> torch.Tensor:
-        assert input.ndim == 5
-        assert input.shape == (input.shape[0], input.shape[1], self.u_dim, input.shape[3], input.shape[4])
-        return torch.einsum('btixy,io->btoxy', input, self.weights)
-
-
-class LiftingLayer(nn.Module):
-
-    """
-    Extended version of Layer P and Q in paper: https://arxiv.org/pdf/2010.08895
-    """
-
-    def __init__(self, in_features: int, out_features: int):
-        super().__init__()
-        self.in_features: int = in_features
-        self.out_features: int = out_features
-        self.weights = nn.Parameter(
-            data=torch.rand(in_features, out_features) / (in_features * out_features)
-        )
-
-    def forward(self, input: torch.Tensor) -> torch.Tensor:
-        assert input.ndim == 5
-        batch_size, t_dim, u_dim, x_res, y_res = input.shape
-        assert self.in_features == u_dim
-        output: torch.Tensor = torch.einsum('btixy,io->btoxy', input, self.weights)
-        assert output.shape == (batch_size, t_dim, self.out_features, x_res, y_res)
-        return output
-
-
-class FeatureNormalization(nn.Module):
-
-    def __init__(self, normalized_shape: Tuple[int, ...], dims: Tuple[int, ...]):
-        super().__init__()
-        assert len(normalized_shape) == len(dims)
-
-        self.dims: Tuple[int, ...] = dims
-        self.normalized_shape: Tuple[int, ...] = normalized_shape
-        self.layer_norm = nn.LayerNorm(normalized_shape=normalized_shape)
-
-    def forward(self, input: torch.Tensor) -> torch.Tensor:
-        assert input.ndim >= len(self.dims)
-        original_shape: Tuple[int, ...] = input.shape
-        # Move normalized dimensions to the end
-        permute_order: List[int] = [d for d in range(len(original_shape)) if d not in self.dims] + list(self.dims)
-        output: torch.Tensor = input.permute(*permute_order)
-        # Apply LayerNorm on the last dimensions
-        output = self.layer_norm(output)
-        # Permute back to the original shape
-        inverse_permute_order: List[int] = [permute_order.index(i) for i in range(len(original_shape))]
-        output = output.permute(*inverse_permute_order)
-        assert output.shape == original_shape
-        return output
-
-
-class ContextAggregateLayer(nn.Module):
-
-    def __init__(
-        self,
-        local_x_res: int,
-        local_y_res: int,
-    ):
-        super().__init__()
-        self.local_x_res: int = local_x_res
-        self.local_y_res: int = local_y_res
-
-        self.weights = nn.Parameter(data=torch.randn(self.local_x_res, self.local_y_res))
-
-    def forward(self, global_context: torch.Tensor, local_context: torch.Tensor) -> torch.Tensor:
-        # (batch_size, timesteps, context_dim, x_res, y_res)
-        assert global_context.ndim == local_context.ndim == 5
-        assert global_context.shape[:3] == local_context.shape[:3]
-        assert local_context.shape[-2:] == (self.local_x_res, self.local_x_res)
-        batch_size, timesteps, context_dim = global_context.shape[:3]
-
-        # Adapt to local_context resolution
-        global_context = self._transform_resolution(input=global_context)
-        assert global_context.shape == local_context.shape == (
-            batch_size, timesteps, context_dim, self.local_x_res, self.local_y_res,
-        )
-        output: torch.Tensor = (
-            global_context * torch.sigmoid(self.weights) + local_context    # broadcasted
+        output = self._untransform_shape(
+            input=output, n_timesteps=n_timesteps, n_patches=local_context.shape[2], 
         )
         return output
 
-    def _transform_resolution(self, input: torch.Tensor) -> torch.Tensor:
-        assert input.ndim == 5
-        assert input.shape[-2:] == (self.local_x_res, self.local_y_res)
-        output: torch.Tensor = input.reshape(
-            input.shape[0], input.shape[1] * input.shape[2], self.local_x_res, self.local_y_res,
-        )
-        output = F.adaptive_avg_pool2d(input=output, output_size=(self.local_x_res, self.local_y_res))
-        output = output.reshape(
-            input.shape[0], input.shape[1], input.shape[2], self.local_x_res, self.local_y_res,
-        )
-        return output
+    @staticmethod
+    def _transform_shape(input: torch.Tensor) -> torch.Tensor:
+        assert input.ndim == 4
+        batch_size, n_timesteps, n_patches, embedding_dim = input.shape
+        output: torch.Tensor = input.flatten(start_dim=1, end_dim=2)
+        return  output.permute(1, 0, 2) # n_timesteps * n_patches, batch_size, embedding_dim
     
+    @staticmethod
+    def _untransform_shape(input: torch.Tensor, n_timesteps: int, n_patches: int) -> torch.Tensor:
+        assert input.ndim == 3
+        sequence_length, batch_size, embedding_dim = input.shape
+        output: torch.Tensor = input.reshape(n_timesteps, n_patches, batch_size, embedding_dim)
+        return output.permute(2, 0, 1, 3)   # batch_size, n_timesteps, n_patches, embedding_dim
+
+
 
 if __name__ == '__main__':
 
-    self = TemporalAttention(
-        in_timesteps=12, out_timesteps=6, 
-        width=64, x_res=256, y_res=256,
-        downsampling_factor=16,
-        n_heads=16, dropout=0.1
-    ).cuda()
-    batch_size: int = 32
-    x = torch.rand(batch_size, 12, 64, 256, 256).cuda()
+    device = torch.device('cuda')
+    self = LinearDecoder(
+        in_channels=128, out_channels=2, 
+        in_timesteps=12, out_timesteps=12,
+        n_xpatches=32, n_ypatches=64, patch_size=(16, 16)
+    ).to(device)
+    x = torch.rand(32, 12, 128, 32, 64).to(device)
     y = self(x)
     print(y.shape)
-
-
 
 
