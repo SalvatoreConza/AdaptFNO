@@ -3,16 +3,15 @@ device: cuda
 dataset:
   root: "data/era5"
   pressure_level: 1000
-  global_latitude: [90, -90]   # (a, b) in the range [90.0, 89.75, 89.5, ..., -89.5, -89.75, -90.0]
-  global_longitude: [0, 360]   # (a, b) in the range [0.0, 0.25, 0.5, ..., 359.25, 359.5, 359.75]
+  global_latitude: [45, -45]   # (a, b) in the range [90.0, 89.75, 89.5, ..., -89.5, -89.75, -90.0]
+  global_longitude: [60, 150]   # (a, b) in the range [0.0, 0.25, 0.5, ..., 359.25, 359.5, 359.75]
   global_resolution: [128, 128]  # [x_res, y_res] or null to keep the original resolution
   local_latitude: [30, -10]
   local_longitude: [90, 130]
-  local_resolution: [128, 128]
-  fromdate: '20240701'
-  todate: '20240731'
-  time_resolution: 6  # should match train
-  bundle_size: 1      # should match train
+  fromdate: '20230101'
+  todate: '20240823'
+  indays: 3
+  outdays: 1
 
 global_architecture:
   from_checkpoint: ".checkpoints/global/1000/epoch265.pt"   # should match train.yaml:/local_architecture.global_checkpoint

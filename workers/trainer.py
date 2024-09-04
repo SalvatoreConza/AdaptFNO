@@ -11,7 +11,7 @@ from common.training import Accumulator, EarlyStopping, Timer, Logger, Checkpoin
 from common.losses import VGG16Loss
 
 from models.operators import GlobalOperator, LocalOperator
-from era5.wind.datasets import Wind2dERA5
+from era5.datasets import Wind2dERA5
 
 
 class _BaseOperatorTrainer(ABC):

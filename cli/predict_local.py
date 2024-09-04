@@ -6,7 +6,7 @@ import torch
 from torch.optim import Adam
 
 from models.operators import GlobalOperator, LocalOperator
-from era5.wind.datasets import Wind2dERA5
+from era5.datasets import Wind2dERA5, ERA5_6Hour
 from common.training import CheckpointLoader
 from workers.predictor import GlobalOperatorPredictor, LocalOperatorPredictor
 
@@ -28,11 +28,10 @@ def main(config: Dict[str, Any]) -> None:
     global_resolution: Tuple[int, int]  = tuple(config['dataset']['global_resolution'])
     local_latitude: Tuple[float, float] = tuple(config['dataset']['local_latitude'])
     local_longitude: Tuple[float, float] = tuple(config['dataset']['local_longitude'])
-    local_resolution: Tuple[int, int]   = tuple(config['dataset']['local_resolution'])
     fromdate: str                       = str(config['dataset']['fromdate'])
     todate: str                         = str(config['dataset']['todate'])
-    time_resolution: int                = int(config['dataset']['time_resolution'])
-    bundle_size: int                    = int(config['dataset']['bundle_size'])
+    indays: int                         = int(config['dataset']['indays'])
+    outdays: int                        = int(config['dataset']['outdays'])
 
     from_checkpoint: str                = str(config['local_architecture']['from_checkpoint'])
     global_checkpoint: str              = str(config['global_architecture']['from_checkpoint'])
@@ -56,9 +55,8 @@ def main(config: Dict[str, Any]) -> None:
     )
 
     # Initialize the test dataset
-    dataset = Wind2dERA5(
+    dataset = ERA5_6Hour(
         dataroot=dataroot,
-        pressure_level=pressure_level,
         fromdate=fromdate,
         todate=todate,
         global_latitude=global_latitude,
@@ -66,9 +64,9 @@ def main(config: Dict[str, Any]) -> None:
         global_resolution=global_resolution,
         local_latitude=local_latitude,
         local_longitude=local_longitude,
-        local_resolution=local_resolution,
-        time_resolution=time_resolution,
-        bundle_size=bundle_size,
+        indays=indays,
+        outdays=outdays,
+        device=device,
     )
     
     local_predictor.predict(dataset=dataset, plot_resolution=plot_resolution)

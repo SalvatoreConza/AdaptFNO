@@ -9,7 +9,7 @@ from torch.utils.data import random_split
 from torch.optim import Optimizer, Adam
 
 from models.operators import GlobalOperator, LocalOperator
-from era5.wind.datasets import Wind2dERA5
+from era5.datasets import ERA5_6Hour
 from common.training import CheckpointLoader
 from workers.trainer import LocalOperatorTrainer
 
@@ -25,20 +25,17 @@ def main(config: Dict[str, Any]) -> None:
     # Parse CLI arguments:
     device: torch.device                = torch.device(config['device'])
     dataroot: str                       = str(config['dataset']['root'])
-    pressure_level: str                 = int(config['dataset']['pressure_level'])
     global_latitude: Tuple[float, float] = tuple(config['dataset']['global_latitude'])
     global_longitude: Tuple[float, float] = tuple(config['dataset']['global_longitude'])
     global_resolution: Tuple[int, int]  = tuple(config['dataset']['global_resolution'])
     local_latitude: Tuple[float, float] = tuple(config['dataset']['local_latitude'])
     local_longitude: Tuple[float, float] = tuple(config['dataset']['local_longitude'])
-    local_resolution: Tuple[int, int]   = tuple(config['dataset']['local_resolution'])
     train_fromdate: str                 = str(config['dataset']['train_fromdate'])
     train_todate: str                   = str(config['dataset']['train_todate'])
     val_fromdate: str                   = str(config['dataset']['val_fromdate'])
     val_todate: str                     = str(config['dataset']['val_todate'])
-    time_resolution: int                = int(config['dataset']['time_resolution'])
-    bundle_size: int                    = int(config['dataset']['bundle_size'])
-    input_size: int                     = int(config['dataset']['input_size'])
+    indays: int                         = int(config['dataset']['indays'])
+    outdays: int                        = int(config['dataset']['outdays'])
 
     from_checkpoint: Optional[str]      = config['global_architecture']['from_checkpoint']
     global_checkpoint: str              = str(config['local_architecture']['global_checkpoint'])
@@ -61,9 +58,8 @@ def main(config: Dict[str, Any]) -> None:
     global_operator, _ = global_loader.load(scope=globals())
 
     # Instatiate the training datasets
-    train_dataset = Wind2dERA5(
+    train_dataset = ERA5_6Hour(
         dataroot=dataroot,
-        pressure_level=pressure_level,
         fromdate=train_fromdate,
         todate=train_todate,
         global_latitude=global_latitude,
@@ -71,14 +67,12 @@ def main(config: Dict[str, Any]) -> None:
         global_resolution=global_resolution,
         local_latitude=local_latitude,
         local_longitude=local_longitude,
-        local_resolution=local_resolution,
-        time_resolution=time_resolution,
-        bundle_size=bundle_size,
-        input_size=input_size,
+        indays=indays,
+        outdays=outdays,
+        device=device,
     )
-    val_dataset = Wind2dERA5(
+    val_dataset = ERA5_6Hour(
         dataroot=dataroot,
-        pressure_level=pressure_level,
         fromdate=val_fromdate,
         todate=val_todate,
         global_latitude=global_latitude,
@@ -86,10 +80,9 @@ def main(config: Dict[str, Any]) -> None:
         global_resolution=global_resolution,
         local_latitude=local_latitude,
         local_longitude=local_longitude,
-        local_resolution=local_resolution,
-        time_resolution=time_resolution,
-        bundle_size=bundle_size,
-        input_size=input_size,
+        indays=indays,
+        outdays=outdays,
+        device=device,
     )
 
     # Load local operator
@@ -99,11 +92,14 @@ def main(config: Dict[str, Any]) -> None:
         local_operator, local_optimizer = local_loader.load(scope=globals())
     else:
         local_operator = LocalOperator(
-            in_channels=global_operator.in_channels, embedding_dim=global_operator.embedding_dim,
-            in_timesteps=train_dataset.in_timesteps, out_timesteps=train_dataset.out_timesteps,
+            in_channels=global_operator.in_channels, 
+            embedding_dim=global_operator.embedding_dim,
+            in_timesteps=train_dataset.in_timesteps, 
+            out_timesteps=train_dataset.out_timesteps,
             n_layers=global_operator.n_layers,
             spatial_resolution=train_dataset.local_resolution,
-            block_size=block_size, patch_size=patch_size,
+            block_size=block_size, 
+            patch_size=patch_size,
             n_attention_heads=n_attention_heads,
         )
         local_optimizer = Adam(params=local_operator.parameters(), lr=learning_rate)
@@ -114,13 +110,15 @@ def main(config: Dict[str, Any]) -> None:
         global_operator=global_operator, 
         optimizer=local_optimizer,
         noise_level=noise_level,
-        train_dataset=train_dataset, val_dataset=val_dataset,
-        train_batch_size=train_batch_size, val_batch_size=val_batch_size,
+        train_dataset=train_dataset, 
+        val_dataset=val_dataset,
+        train_batch_size=train_batch_size, 
+        val_batch_size=val_batch_size,
         device=device,
     )
     trainer.train(
         n_epochs=n_epochs, patience=patience,
-        tolerance=tolerance, checkpoint_path=f'.checkpoints/local/{pressure_level}',
+        tolerance=tolerance, checkpoint_path=f'.checkpoints/local',
         save_frequency=save_frequency,
     )
 

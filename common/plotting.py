@@ -135,39 +135,6 @@ def plot_predictions_2d(
         plt.close(fig)
 
 
-# TEST
-if __name__ == '__main__':
-    
-    from functools import partial
-    from torch.utils.data import DataLoader
-    from era5.wind.datasets import Wind2dERA5
-    from common.functional import compute_velocity_field
-    
-    dataset = Wind2dERA5(
-        dataroot='data/era5',
-        pressure_level=1000,
-        fromdate='20240725',
-        todate='20240731',
-        global_latitude=(90, -90),
-        global_longitude=(0, 360),
-        global_resolution=(128, 256),
-        local_latitude=None,
-        local_longitude=None,
-        local_resolution=None,
-        time_resolution=1,  # time resolution must be 1
-        bundle_size=1,  # bundle size must be 1
-        input_size=1,
-    )
-    loader = DataLoader(dataset, batch_size=1000)   # only plot 1000 timesteps at max
-    input, output = next(iter(loader))
-    input = input.flatten(0, 1)
-    output = output.flatten(0, 1)
-
-    print(input.shape)
-    print(output.shape)
-
-    plot_groundtruths_2d(groundtruths=output, reduction=partial(compute_velocity_field, dim=1), resolution=(128, 256))
-
 
     
 

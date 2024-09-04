@@ -14,7 +14,7 @@ from common.functional import compute_velocity_field
 from common.plotting import plot_predictions_2d
 
 from models.operators import GlobalOperator, LocalOperator
-from era5.wind.datasets import Wind2dERA5
+from era5.datasets import Wind2dERA5
 
 
 
@@ -175,34 +175,4 @@ class LocalOperatorPredictor:
             resolution=plot_resolution,
         )
 
-
-
-if __name__ == '__main__':
-
-    from common.training import CheckpointLoader
-    global_loader = CheckpointLoader(checkpoint_path='.checkpoints/global/epoch245.pt')
-    global_operator, _ = global_loader.load(scope=globals())
-
-    self = GlobalOperatorPredictor(
-        global_operator=global_operator,
-        device=torch.device('cuda'),
-    )
-
-    dataset = Wind2dERA5(
-        dataroot='data/era5',
-        pressure_level=1000,
-        fromdate='20240725',
-        todate='20240731',
-        global_latitude=(30, -10),
-        global_longitude=(90, 130),
-        global_resolution=(128, 128),
-        local_latitude=None,
-        local_longitude=None,
-        local_resolution=None,
-        time_resolution=6,
-        bundle_size=1,
-        input_size=1,
-    )
-
-    self.predict(dataset=dataset, plot_resolution=(256, 256))
 
