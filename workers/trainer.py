@@ -7,6 +7,7 @@ import torch.nn as nn
 from torch.utils.data import DataLoader
 from torch.optim import Optimizer
 
+
 from common.training import Accumulator, EarlyStopping, Timer, Logger, CheckpointSaver
 from common.losses import VGG16Loss
 
@@ -45,7 +46,6 @@ class _BaseOperatorTrainer(ABC):
             shuffle=False,
         )
         self.loss_function: nn.Module = nn.MSELoss(reduction='sum').to(self.device)
-        # self.loss_function: nn.Module = VGG16Loss(reduction='sum').to(self.device)
 
     @abstractmethod
     def train(
@@ -83,7 +83,12 @@ class GlobalOperatorTrainer(_BaseOperatorTrainer):
             train_batch_size=train_batch_size, val_batch_size=val_batch_size,
             device=device,
         )
-        self.global_operator: GlobalOperator = global_operator.to(device=self.device)
+        if torch.cuda.device_count() > 1:
+            self.global_operator: GlobalOperator = nn.DataParallel(global_operator).to(device=self.device)
+        elif torch.cuda.device_count() == 1:
+            self.global_operator: GlobalOperator = global_operator.to(device=self.device)
+        else:
+            self.global_operator: GlobalOperator = global_operator
 
     def train(
         self, 
@@ -224,8 +229,16 @@ class LocalOperatorTrainer(_BaseOperatorTrainer):
             train_batch_size=train_batch_size, val_batch_size=val_batch_size,
             device=device,
         )
-        self.local_operator: LocalOperator = local_operator.to(device=self.device)
-        self.global_operator: GlobalOperator = global_operator.to(device=self.device)
+
+        if torch.cuda.device_count() > 1:
+            self.global_operator: GlobalOperator = nn.DataParallel(global_operator).to(device=self.device)
+            self.local_operator: GlobalOperator = nn.DataParallel(local_operator).to(device=self.device)
+        elif torch.cuda.device_count() == 1:
+            self.global_operator: GlobalOperator = global_operator.to(device=self.device)
+            self.local_operator: LocalOperator = local_operator.to(device=self.device)
+        else:
+            self.global_operator: GlobalOperator = global_operator
+            self.local_operator: LocalOperator = local_operator
 
     def train(
         self, 
