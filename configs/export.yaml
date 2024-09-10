@@ -1,4 +1,4 @@
-year: 2023
+year: 2024
 global_latitude: [45, -45]    # (a, b) in the range [90.0, 89.75, 89.5, ..., -89.5, -89.75, -90.0]
 global_longitude: [60, 150]   # (a, b) in the range [0.0, 0.25, 0.5, ..., 359.25, 359.5, 359.75]
 global_resolution: [128, 128]

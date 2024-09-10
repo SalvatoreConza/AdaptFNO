@@ -62,6 +62,7 @@ class ERA5_6Hour(Dataset):
             )
         )
         assert os.path.isdir(self.tensor_root), 'Data tensors are not prepared'
+        
         if self.has_global:
             self.global_input_directory: str = os.path.join(self.tensor_root, 'global', 'input')
             self.global_output_directory: str = os.path.join(self.tensor_root, 'global', 'output')
@@ -102,13 +103,6 @@ class ERA5_6Hour(Dataset):
         if self.has_global:
             global_input: torch.Tensor = torch.load(os.path.join(self.global_input_directory, f"GI{idx}.pt"))
             global_output: torch.Tensor = torch.load(os.path.join(self.global_output_directory, f"GO{idx}.pt"))
-            # Resize
-            if (self.global_resolution is not None) and (self.global_resolution != tuple(global_input.shape[-2:])):
-                global_input = F.interpolate(input=global_input, size=self.global_resolution, mode='nearest')
-
-            if (self.global_resolution is not None) and (self.global_resolution != tuple(global_output.shape[-2:])):
-                global_output = F.interpolate(input=global_output, size=self.global_resolution, mode='nearest')
-            
             sample += (global_input, global_output)
 
         if self.has_local:
