@@ -2,6 +2,5 @@
 
 CONFIG="configs/export.yaml"
 
-echo "Start Writing Tensors..."
 python cli/export_data.py --config="$CONFIG"
 

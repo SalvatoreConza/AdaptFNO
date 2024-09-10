@@ -39,7 +39,7 @@ def hash_params(**kwargs) -> str:
         else:
             d[key] = value
 
+    prefix: str = '' if ('fromdate' not in d.keys() or 'todate' not in d.keys()) else f"{d['fromdate']}_{d['todate']}_"
     param_string: str = '_'.join([f"{key}:{value}" for key, value in d.items()])
-    return hashlib.md5(param_string.encode()).hexdigest()
-
+    return prefix + hashlib.md5(param_string.encode()).hexdigest()
 

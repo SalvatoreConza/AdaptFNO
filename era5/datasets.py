@@ -101,8 +101,8 @@ class ERA5_6Hour(Dataset):
         sample: Tuple[torch.Tensor, ...] = tuple()
 
         if self.has_global:
-            global_input = torch.load(os.path.join(self.global_input_directory, f"GI{idx}.pt"))
-            global_output = torch.load(os.path.join(self.global_output_directory, f"GO{idx}.pt"))
+            global_input: torch.Tensor = torch.load(os.path.join(self.global_input_directory, f"GI{idx}.pt"))
+            global_output: torch.Tensor = torch.load(os.path.join(self.global_output_directory, f"GO{idx}.pt"))
             # Resize
             if (self.global_resolution is not None) and (self.global_resolution != tuple(global_input.shape[-2:])):
                 global_input = F.interpolate(input=global_input, size=self.global_resolution, mode='bicubic')
@@ -113,8 +113,8 @@ class ERA5_6Hour(Dataset):
             sample += (global_input, global_output)
 
         if self.has_local:
-            local_input = torch.load(os.path.join(self.local_input_directory, f"LI{idx}.pt"))
-            local_output = torch.load(os.path.join(self.local_output_directory, f"LO{idx}.pt"))
+            local_input: torch.Tensor = torch.load(os.path.join(self.local_input_directory, f"LI{idx}.pt"))
+            local_output: torch.Tensor = torch.load(os.path.join(self.local_output_directory, f"LO{idx}.pt"))
             sample += (local_input, local_output)
 
         return sample
@@ -128,8 +128,8 @@ class ERA5_6Hour(Dataset):
 if __name__ == '__main__':
 
     self = ERA5_6Hour(
-        fromdate='20240701',
-        todate='20240823',
+        fromdate='20230101',
+        todate='20231231',
         global_latitude=(45, -45),
         global_longitude=(60, 150),
         global_resolution=None,
@@ -140,17 +140,7 @@ if __name__ == '__main__':
     )
 
     from torch.utils.data import DataLoader
-    dataloader = DataLoader(dataset=self, batch_size=1, num_workers=0)
-    for sample in dataloader:
-        global_input, global_output, local_input, local_output = sample
-        print(global_input.shape)
-        print(global_output.shape)
-        print(local_input.shape)
-        print(local_output.shape)
-        print('-----')
-
-
-
+    dataloader = DataLoader(dataset=self, batch_size=32, num_workers=0)
 
 
 

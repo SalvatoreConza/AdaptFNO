@@ -1,6 +1,6 @@
-grib_path: 'data/out.grib'
-fromdate: '20240701'
-todate: '20240823'
+grib_path: 'data/2023.grib'
+fromdate: '20230101'
+todate: '20231231'
 global_latitude: [45, -45]    # (a, b) in the range [90.0, 89.75, 89.5, ..., -89.5, -89.75, -90.0]
 global_longitude: [60, 150]   # (a, b) in the range [0.0, 0.25, 0.5, ..., 359.25, 359.5, 359.75]
 local_latitude: [30, -10]
