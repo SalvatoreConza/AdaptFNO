@@ -15,8 +15,8 @@ class ERA5_6Hour(Dataset):
 
     def __init__(
         self,
-        fromdate: str,
-        todate: str,
+        fromyear: int,
+        toyear: int,
         global_latitude: Tuple[float, float] | None,
         global_longitude: Tuple[float, float] | None,
         global_resolution: Tuple[int, int] | None,
@@ -30,8 +30,8 @@ class ERA5_6Hour(Dataset):
         longitude: (a, b) in the range [0.0, 0.25, 0.5, ..., 359.25, 359.5, 359.75]
         """
         super().__init__()
-        self.fromdate: dt.datetime = dt.datetime.strptime(fromdate, '%Y%m%d')
-        self.todate: dt.datetime = dt.datetime.strptime(todate, '%Y%m%d')
+        self.fromyear: int = fromyear
+        self.toyear: int = toyear
         self.global_latitude: Tuple[float, float] | None = global_latitude
         self.global_longitude: Tuple[float, float] | None = global_longitude
         self.local_latitude: Tuple[float, float] | None = local_latitude
@@ -52,30 +52,34 @@ class ERA5_6Hour(Dataset):
         self.has_local: bool = all([local_latitude, local_longitude])
         assert self.has_global or self.has_local, 'either global or local must be specified'
 
-        # Get tensor directories
-        self.tensor_root: str = os.path.join(
-            'tensors', 
-            hash_params(
-                global_latitude=global_latitude, global_longitude=global_longitude,
+        if self.has_global:
+            global_hash: str = hash_params(
+                global_latitude=global_latitude, global_longitude=global_longitude, 
+                global_resolution=global_resolution,
+                indays=indays, outdays=outdays,
+            )
+            self.global_input_directory: str = os.path.join('tensors', 'globals', global_hash, 'input')
+            self.global_output_directory: str = os.path.join('tensors', 'globals', global_hash, 'output')
+            assert os.path.isdir(self.global_input_directory), 'Data tensors are not prepared'
+            assert os.path.isdir(self.global_output_directory), 'Data tensors are not prepared'
+
+            self.global_input_filenames: List[str] = self._directory2filenames(directory=self.global_input_directory)
+            self.global_output_filenames: List[str] = self._directory2filenames(directory=self.global_output_directory)
+            assert len(self.global_input_filenames) == len(self.global_output_filenames)
+
+        if self.has_local:
+            local_hash: str = hash_params(
                 local_latitude=local_latitude, local_longitude=local_longitude,
                 indays=indays, outdays=outdays,
             )
-        )
-        assert os.path.isdir(self.tensor_root), 'Data tensors are not prepared'
-        
-        if self.has_global:
-            self.global_input_directory: str = os.path.join(self.tensor_root, 'global', 'input')
-            self.global_output_directory: str = os.path.join(self.tensor_root, 'global', 'output')
-            assert os.path.isdir(self.global_input_directory)
-            assert os.path.isdir(self.global_output_directory)
-            assert len(os.listdir(self.global_input_directory)) == len(os.listdir(self.global_output_directory))
-
-        if self.has_local:
-            self.local_input_directory: str = os.path.join(self.tensor_root, 'local', 'input')
-            self.local_output_directory: str = os.path.join(self.tensor_root, 'local', 'output')
-            assert os.path.isdir(self.local_input_directory)
-            assert os.path.isdir(self.local_output_directory)
-            assert len(os.listdir(self.local_input_directory)) == len(os.listdir(self.local_output_directory))
+            self.local_input_directory: str = os.path.join('tensors', 'locals', local_hash, 'input')
+            self.local_output_directory: str = os.path.join('tensors', 'locals', local_hash, 'output')
+            assert os.path.isdir(self.local_input_directory), 'Data tensors are not prepared'
+            assert os.path.isdir(self.local_output_directory), 'Data tensors are not prepared'
+            
+            self.local_input_filenames: List[str] = self._directory2filenames(directory=self.local_input_directory)
+            self.local_output_filenames: List[str] = self._directory2filenames(directory=self.local_output_directory)
+            assert len(self.local_input_filenames) == len(self.local_output_filenames)
 
         # Compute resolution
         if self.has_global:
@@ -101,28 +105,90 @@ class ERA5_6Hour(Dataset):
         sample: Tuple[torch.Tensor, ...] = tuple()
 
         if self.has_global:
-            global_input: torch.Tensor = torch.load(os.path.join(self.global_input_directory, f"GI{idx}.pt"))
-            global_output: torch.Tensor = torch.load(os.path.join(self.global_output_directory, f"GO{idx}.pt"))
+            global_input: torch.Tensor = torch.load(os.path.join(self.global_input_directory, self.global_input_filenames[idx]))
+            global_output: torch.Tensor = torch.load(os.path.join(self.global_output_directory, self.global_output_filenames[idx]))
             sample += (global_input, global_output)
 
         if self.has_local:
-            local_input: torch.Tensor = torch.load(os.path.join(self.local_input_directory, f"LI{idx}.pt"))
-            local_output: torch.Tensor = torch.load(os.path.join(self.local_output_directory, f"LO{idx}.pt"))
+            local_input: torch.Tensor = torch.load(os.path.join(self.local_input_directory, self.local_input_filenames[idx]))
+            local_output: torch.Tensor = torch.load(os.path.join(self.local_output_directory, self.local_output_filenames[idx]))
             sample += (local_input, local_output)
 
         return sample
 
     def __len__(self) -> int:
-        if hasattr(self, 'global_input_directory'):
-            return len(os.listdir(self.global_input_directory))
+        if self.has_global:
+            return len(self.global_input_filenames)
         else:
-            return len(os.listdir(self.locall_input_directory))
+            return len(self.local_input_filenames)
+
+    def _directory2filenames(self, directory: str) -> List[str]:
+        return sorted([
+            fname 
+            for fname in os.listdir(path=directory)
+                if self.fromyear <= int(fname[2:6]) <= self.toyear
+                    and fname.endswith('.pt')
+        ])
+
+
+class ERA5_6Hour_Inference(ERA5_6Hour):
+
+    def __init__(
+        self,
+        fromdate: str,
+        todate: str,
+        global_latitude: Tuple[float, float] | None,
+        global_longitude: Tuple[float, float] | None,
+        global_resolution: Tuple[int, int] | None,
+        local_latitude: Tuple[float, float] | None,
+        local_longitude: Tuple[float, float] | None,
+        indays: int,
+        outdays: int,
+    ):
+        self.fromdate: dt.datetime = dt.datetime.strptime(fromdate, '%Y%m%d')
+        self.todate: dt.datetime = dt.datetime.strptime(todate, '%Y%m%d')
+
+        super().__init__(
+            fromyear=fromdate.year,
+            toyear=todate.year,
+            global_latitude=global_latitude,
+            global_longitude=global_longitude,
+            global_resolution=global_resolution,
+            local_latitude=local_latitude,
+            local_longitude=local_longitude,
+            indays=indays,
+            outdays=outdays,
+        )
+
+    # override
+    def _directory2filenames(self, directory: str) -> List[str]:
+        filenames: List[str] = []
+        for fname in os.listdir(path=directory):
+            min_date, max_date = self._filename2datetimes(filename=fname)
+            if self.fromdate <= min_date and max_date <= self.todate:
+                filenames.append(fname)
+        
+        return sorted(filenames)
+
+    @staticmethod
+    def _filename2datetimes(filename: str) -> Tuple[dt.datetime, dt.datetime]:
+        components: List[str] = filename.split('__')
+        year = int(components[0][-4:])
+        min_month = int(components[1].split('_')[0][:2])
+        min_day = int(components[1].split('_')[0][2:4])
+        max_month = int(components[2].split('_')[-1][:2])
+        max_day = int(components[2].split('_')[-1][2:4])
+        return (
+            dt.datetime(year=year, month=min_month, day=min_day), 
+            dt.datetime(year=year, month=max_month, day=max_day)
+        )
+
 
 if __name__ == '__main__':
 
     self = ERA5_6Hour(
-        fromdate='20230101',
-        todate='20231231',
+        fromyear=2020,
+        toyear=2022,
         global_latitude=(45, -45),
         global_longitude=(60, 150),
         global_resolution=None,

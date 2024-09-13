@@ -53,7 +53,6 @@ class TensorWriter:
             for s in range(0, self.total_timesteps - self.in_timesteps + 1, self.out_timesteps)
                 if s + self.in_timesteps + self.out_timesteps <= self.total_timesteps   # drop incomplete slice
         ]
-        assert len(self.slices) == len(self)
 
         # Check global/local dataset
         self.has_global: bool = all([global_latitude, global_longitude])
@@ -67,42 +66,53 @@ class TensorWriter:
         if self.has_local:
             self.local_subsets = self._prepare_subsets(self.dataset, self.local_latitude, self.local_longitude)
 
-        # Prepare destination directories
-        self.tensor_root: str = os.path.join(
-            'tensors', 
-            hash_params(
-                global_latitude=global_latitude, global_longitude=global_longitude,
-                local_latitude=local_latitude, local_longitude=local_longitude,
+        # Precompute datestrings
+        self.datestrings: List[str] = self._prepare_datestrings(
+            subsets=self.global_subsets if self.has_global else self.local_subsets
+        )
+
+        if self.has_global:
+            global_hash: str = hash_params(
+                global_latitude=global_latitude, global_longitude=global_longitude, 
+                global_resolution=global_resolution,
                 indays=indays, outdays=outdays,
             )
-        )
-        if self.has_global:
-            self.global_input_directory: str = os.path.join(self.tensor_root, 'global', 'input')
-            self.global_output_directory: str = os.path.join(self.tensor_root, 'global', 'output')
+            self.global_input_directory: str = os.path.join('tensors', 'globals', global_hash, 'input')
+            self.global_output_directory: str = os.path.join('tensors', 'globals', global_hash, 'output')
             os.makedirs(self.global_input_directory, exist_ok=True)
             os.makedirs(self.global_output_directory, exist_ok=True)
 
         if self.has_local:
-            self.local_input_directory: str = os.path.join(self.tensor_root, 'local', 'input')
-            self.local_output_directory: str = os.path.join(self.tensor_root, 'local', 'output')
+            local_hash: str = hash_params(
+                local_latitude=local_latitude, local_longitude=local_longitude,
+                indays=indays, outdays=outdays,
+            )
+            self.local_input_directory: str = os.path.join('tensors', 'locals', local_hash, 'input')
+            self.local_output_directory: str = os.path.join('tensors', 'locals', local_hash, 'output')
             os.makedirs(self.local_input_directory, exist_ok=True)
             os.makedirs(self.local_output_directory, exist_ok=True)
 
-    # DONE
     def write2disk(self) -> None:
         for idx in range(len(self)):
             print(f"Writing sample {idx + 1}/{len(self)}...")
+            suffix: str = '__' + self.datestrings[idx]
+
             if self.has_global:
-                global_input, global_output = self._to_tensor(idx=idx, is_global=True)
-                torch.save(obj=global_input, f=os.path.join(self.global_input_directory, f'GI{self.year}_{idx}.pt'))
-                torch.save(obj=global_output, f=os.path.join(self.global_output_directory, f'GO{self.year}_{idx}.pt'))
-
+                global_input_filepath: str = os.path.join(self.global_input_directory, f'GI{self.year}{suffix}.pt')
+                global_output_filepath: str = os.path.join(self.global_output_directory, f'GO{self.year}{suffix}.pt')
+                if (not os.path.exists(path=global_input_filepath)) or (not os.path.exists(global_output_filepath)):
+                    global_input, global_output = self._to_tensor(idx=idx, is_global=True)
+                    torch.save(obj=global_input, f=global_input_filepath)
+                    torch.save(obj=global_output, f=global_output_filepath)
+                
             if self.has_local:
-                local_input, local_output = self._to_tensor(idx=idx, is_global=False)
-                torch.save(obj=local_input, f=os.path.join(self.local_input_directory, f'LI{self.year}_{idx}.pt'))
-                torch.save(obj=local_output, f=os.path.join(self.local_output_directory, f'LO{self.year}_{idx}.pt'))
+                local_input_filepath: str = os.path.join(self.local_input_directory, f'LI{self.year}{suffix}.pt')
+                local_output_filepath: str = os.path.join(self.local_output_directory, f'LO{self.year}{suffix}.pt')
+                if (not os.path.exists(local_input_filepath)) or (not os.path.exists(local_output_filepath)):
+                    local_input, local_output = self._to_tensor(idx=idx, is_global=False)
+                    torch.save(obj=local_input, f=local_input_filepath)
+                    torch.save(obj=local_output, f=local_output_filepath)
 
-    # DONE
     def _to_tensor(self, idx: int, is_global: bool) -> Tuple[torch.Tensor, torch.Tensor]:
         if is_global:
             surface_subset, pressure_subset, output_subset = self.global_subsets[idx]
@@ -136,7 +146,6 @@ class TensorWriter:
 
         return in_tensor, out_tensor
 
-    # DONE
     def _prepare_subsets(
         self, 
         dataset: xr.Dataset, 
@@ -163,9 +172,24 @@ class TensorWriter:
             )
             for input_subset, output_subset in subsets
         ]
-
         return subsets
+
+    def _prepare_datestrings(self, subsets: List[Tuple[xr.Dataset, xr.Dataset, xr.Dataset]]) -> List[str]:
+        return [
+            self._numpytimes2string(input_subset.time.values) + '__' + self._numpytimes2string(output_subset.time.values) 
+            for _, input_subset, output_subset in subsets
+        ]
+
+    @staticmethod
+    def _numpytimes2string(timestamps: list) -> str:
+        datestrings: List[str] = []
+        for t in timestamps:
+            datestring: str = t.astype('datetime64[s]').astype(dt.datetime).strftime('%m%d')
+            if datestring not in datestrings:
+                datestrings.append(datestring)
+        
+        return '_'.join(datestrings)
 
     def __len__(self):
         return len(self.slices)
-
+    

@@ -23,15 +23,13 @@ def main(config: Dict[str, Any]) -> None:
     """
 
     # Parse CLI arguments:
-    device: torch.device                = torch.device(config['device'])
-    dataroot: str                       = str(config['dataset']['root'])
     global_latitude: Tuple[float, float] = tuple(config['dataset']['global_latitude'])
     global_longitude: Tuple[float, float] = tuple(config['dataset']['global_longitude'])
     global_resolution: Tuple[int, int]  = tuple(config['dataset']['global_resolution'])
-    train_fromdate: str                 = str(config['dataset']['train_fromdate'])
-    train_todate: str                   = str(config['dataset']['train_todate'])
-    val_fromdate: str                   = str(config['dataset']['val_fromdate'])
-    val_todate: str                     = str(config['dataset']['val_todate'])
+    train_fromyear: str                 = int(config['dataset']['train_fromyear'])
+    train_toyear: str                   = int(config['dataset']['train_toyear'])
+    val_fromyear: str                   = int(config['dataset']['val_fromyear'])
+    val_toyear: str                     = int(config['dataset']['val_toyear'])
     indays: int                         = int(config['dataset']['indays'])
     outdays: int                        = int(config['dataset']['outdays'])
 
@@ -53,9 +51,8 @@ def main(config: Dict[str, Any]) -> None:
 
     # Instatiate the training datasets
     train_dataset = ERA5_6Hour(
-        dataroot=dataroot,
-        fromdate=train_fromdate,
-        todate=train_todate,
+        fromyear=train_fromyear,
+        toyear=train_toyear,
         global_latitude=global_latitude,
         global_longitude=global_longitude,
         global_resolution=global_resolution,
@@ -65,9 +62,8 @@ def main(config: Dict[str, Any]) -> None:
         outdays=outdays,
     )
     val_dataset = ERA5_6Hour(
-        dataroot=dataroot,
-        fromdate=val_fromdate,
-        todate=val_todate,
+        fromyear=val_fromyear,
+        toyear=val_toyear,
         global_latitude=global_latitude,
         global_longitude=global_longitude,
         global_resolution=global_resolution,
@@ -106,7 +102,7 @@ def main(config: Dict[str, Any]) -> None:
         val_dataset=val_dataset,
         train_batch_size=train_batch_size, 
         val_batch_size=val_batch_size,
-        device=device,
+        device=torch.device('cuda'),
     )
     trainer.train(
         n_epochs=n_epochs, 

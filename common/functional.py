@@ -1,4 +1,4 @@
-from typing import Dict, Any
+from typing import Dict, Tuple, Any
 import hashlib
 
 import torch

@@ -5,23 +5,23 @@ import yaml
 from era5.precompute import TensorWriter
 
 
-def main(config: Dict[str, Any]) -> None:
+def main(config: Dict[str, Any], year: int) -> None:
     """
     Main function to write grib dataset to pytorch tensor files.
 
     Parameters:
         config (Dict[str, Any]): Configuration dictionary.
+        year (int): Year of data to export
     """
 
     # Parse CLI arguments:
-    year: int                               = int(config['year'])
-    global_latitude: Tuple[float, float]    = config['global_latitude']
-    global_longitude: Tuple[float, float]   = config['global_longitude']
-    global_resolution: Tuple[float]         = config['global_resolution']
-    local_latitude: Tuple[float, float]     = config['local_latitude']
-    local_longitude: Tuple[float, float]    = config['local_longitude']
-    indays: int                             = int(config['indays'])
-    outdays: int                            = int(config['outdays'])
+    global_latitude: Tuple[float, float]    = config['dataset']['global_latitude']
+    global_longitude: Tuple[float, float]   = config['dataset']['global_longitude']
+    global_resolution: Tuple[float]         = config['dataset']['global_resolution']
+    local_latitude: Tuple[float, float]     = config['dataset']['local_latitude']
+    local_longitude: Tuple[float, float]    = config['dataset']['local_longitude']
+    indays: int                             = int(config['dataset']['indays'])
+    outdays: int                            = int(config['dataset']['outdays'])
 
     # Instatiate the training datasets
     train_dataset = TensorWriter(
@@ -43,6 +43,7 @@ if __name__ == "__main__":
     # Initialize the argument parser
     parser = argparse.ArgumentParser(description='Write grib dataset to pytorch tensor files')
     parser.add_argument('--config', type=str, required=True, help='Configuration file name.')
+    parser.add_argument('--year', type=int, required=True, help='Year of data to export')
 
     args: argparse.Namespace = parser.parse_args()
     
@@ -51,4 +52,4 @@ if __name__ == "__main__":
         config: Dict[str, Any] = yaml.safe_load(f)
 
     # Run the main function with the configuration
-    main(config)
+    main(config, args.year)

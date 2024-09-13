@@ -1,5 +1,3 @@
-device: cuda
-
 dataset:
   root: 'data/out.grib'
   pressure_level: 1000
@@ -8,18 +6,16 @@ dataset:
   global_resolution: [128, 128]  # [x_res, y_res] or null to keep the original resolution
   local_latitude: [30, -10]
   local_longitude: [90, 130]
-  # train_fromdate: '20000101'
-  train_fromdate: '20201101'
-  train_todate: '20201231'
-  # val_fromdate: '20210101'
-  val_fromdate: '20221215'
-  val_todate: '20221231'
+  train_fromyear: 2018
+  train_toyear: 2022
+  val_fromyear: 2023
+  val_toyear: 2024
   indays: 3
   outdays: 1
 
 global_architecture:
   embedding_dim: 1024
-  n_layers: 4
+  n_layers: 12
   block_size: 128
   patch_size: [4, 4]
   dropout_rate: 0.1
@@ -37,8 +33,17 @@ training:
   train_batch_size: 4
   val_batch_size: 4
   learning_rate: 0.001   # has no effect if the according `from_checkpoint` is given (not null)
-  n_epochs: 2
+  n_epochs: 1000
   patience: 50
   tolerance: 0.
   save_frequency: 5
+
+predict:
+  fromdate: '20240815'
+  todate: '20240823'
+  from_global_checkpoint: '.checkpoints/local/1000/epoch105.pt'
+  from_local_checkpoint: '.checkpoints/local/1000/epoch105.pt'
+  global_plot_resolution: null   # set to null to respect the true resolution
+  local_plot_resolution: null   # set to null to respect the true resolution
+
 

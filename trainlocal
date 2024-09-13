@@ -1,6 +1,6 @@
 #!/bin/bash
 
-CONFIG="configs/train.yaml"
+CONFIG="config.yaml"
 
 echo "Start Training..."
 python cli/train_local.py --config="$CONFIG"

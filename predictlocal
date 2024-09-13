@@ -1,6 +1,6 @@
 #!/bin/bash
 
-CONFIG="configs/predict.yaml"
+CONFIG="config.yaml"
 
 echo "Start Predicting..."
 python cli/predict_local.py --config="$CONFIG"

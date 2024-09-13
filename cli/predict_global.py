@@ -6,7 +6,7 @@ import torch
 from torch.optim import Adam
 
 from models.operators import GlobalOperator
-from era5.datasets import ERA5_6Hour
+from era5.datasets import ERA5_6Hour_Inference
 from common.training import CheckpointLoader
 from workers.predictor import GlobalOperatorPredictor
 
@@ -20,18 +20,16 @@ def main(config: Dict[str, Any]) -> None:
     """
 
     # Parse CLI arguments:
-    device: torch.device                = torch.device(config['device'])
-    dataroot: str                       = str(config['dataset']['root'])
     global_latitude: Tuple[float, float] = tuple(config['dataset']['global_latitude'])
     global_longitude: Tuple[float, float] = tuple(config['dataset']['global_longitude'])
     global_resolution: Tuple[int, int]  = tuple(config['dataset']['global_resolution'])
-    fromdate: str                       = str(config['dataset']['fromdate'])
-    todate: str                         = str(config['dataset']['todate'])
+    fromdate: str                       = str(config['predict']['fromdate'])
+    todate: str                         = str(config['predict']['todate'])
     indays: int                         = int(config['dataset']['indays'])
     outdays: int                        = int(config['dataset']['outdays'])
 
-    from_checkpoint: str                = str(config['global_architecture']['from_checkpoint'])
-    plot_resolution: Optional[List[int, int]] = config['global_plotting']['plot_resolution']
+    from_checkpoint: str                = str(config['predict']['from_global_checkpoint'])
+    plot_resolution: Optional[List[int, int]] = config['predict']['global_plot_resolution']
 
     # Initialize the global operator from global checkpoint
     global_loader = CheckpointLoader(checkpoint_path=from_checkpoint)
@@ -41,12 +39,11 @@ def main(config: Dict[str, Any]) -> None:
     # Initialize the predictor
     global_predictor = GlobalOperatorPredictor(
         global_operator=global_operator,
-        device=device,
+        device=torch.device('cuda'),
     )
 
     # Initialize the test dataset
-    dataset = ERA5_6Hour(
-        dataroot=dataroot,
+    dataset = ERA5_6Hour_Inference(
         fromdate=fromdate,
         todate=todate,
         global_latitude=global_latitude,
