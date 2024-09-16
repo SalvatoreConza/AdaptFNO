@@ -9,12 +9,11 @@ from torch.utils.data import DataLoader
 from torch.optim import Optimizer, Adam
 
 from common.training import Accumulator, EarlyStopping, Timer, Logger, CheckpointSaver
-from common.losses import RegularizedPowerError
 from common.functional import compute_velocity_field
 from common.plotting import plot_predictions_2d
 
 from models.operators import GlobalOperator, LocalOperator
-from era5.datasets import ERA5_6Hour
+from era5.datasets import ERA5_6Hour_Prediction
 
 
 
@@ -29,66 +28,49 @@ class GlobalOperatorPredictor:
         self.global_operator: GlobalOperator = global_operator.to(device=self.device)
         self.loss_function: nn.Module = nn.MSELoss(reduction='sum').to(device=self.device)
 
-    def predict(self, dataset: ERA5_6Hour, plot_resolution: Tuple[int, int] | None) -> None:
+    def predict(self, dataset: ERA5_6Hour_Prediction, plot_resolution: Tuple[int, int] | None) -> None:
         # Set the operator to evaluation mode
         self.global_operator.eval()
-        # Batch size must be 1, must not shuffle
+        # Batch size should be 1 since len(dataset) == 1
         dataloader = DataLoader(
             dataset, 
             batch_size=1, 
-            shuffle=False, 
             num_workers=4, 
             prefetch_factor=3, 
             pin_memory=True,
         )
-        # Use only the first input from the test dataset:
-        global_input: torch.Tensor = next(iter(dataloader))[0].to(device=self.device)
-        # Compute how many bundle from last step to keep 
-        n_retained_bundles: int = dataset.bundle_size - 1   # since each step predicts 1 bundle   
+        # Extract the single sample from the prediction dataset:
+        global_input: torch.Tensor; global_groundtruth: torch.Tensor
+        global_input, global_groundtruth = next(iter(dataloader))
+        global_input = global_input.to(device=self.device)
+        global_groundtruth = global_groundtruth.to(device=self.device)
 
         # Keep track of groundtruths and predictions
-        global_groundtruths: List[torch.Tensor] = []
-        global_predictions: List[torch.Tensor] = []
         timestamps: List[str] = []
         metric_notes: List[str] = []
 
         with torch.no_grad():
-            # Make multi-step prediction
-            for bundle_id, (_, global_groundtruth) in enumerate(dataloader):
-                # Make one-step prediction
-                global_prediction: torch.Tensor = self.global_operator(input=global_input)[0]
-                global_groundtruth: torch.Tensor = global_groundtruth.to(device=self.device)
-                assert global_prediction.shape == global_groundtruth.shape
-                global_predictions.append(global_prediction)
-                global_groundtruths.append(global_groundtruth)
-                # Prepare input for next step
-                if n_retained_bundles == 0:
-                    global_input = global_prediction
-                else: 
-                    global_input = torch.cat(
-                        tensors=[
-                            global_input[:, -n_retained_bundles * dataset.bundle_size:, :, :, :],
-                            global_prediction,
-                        ],
-                        dim=1
-                    )
-                # Compute prediction timestamps
-                prediction_timestamps: List[dt.datetime] = dataset.compute_timestamp(bundle_idx=bundle_id)[1]
-                # Compute metrics
-                total_mse: float = self.loss_function(input=global_prediction, target=global_groundtruth).item()
-                mean_mse: float = total_mse / global_prediction.numel()
+            # Make one-step prediction
+            global_prediction: torch.Tensor = self.global_operator(input=global_input)[0]
+            assert global_prediction.shape == global_groundtruth.shape
+            # Compute prediction timestamps
+            prediction_timestamps: List[dt.datetime] = dataset.compute_out_timestamps()
+            assert len(prediction_timestamps) == global_prediction.shape[1]
+            # Compute metrics separately for each timestep
+            for idx, prediction_timestamp in enumerate(prediction_timestamps):
+                global_prediction_t: torch.Tensor = global_prediction[:, idx, :, :, :]
+                global_groundtruth_t: torch.Tensor = global_groundtruth[:, idx, :, :, :]
+                total_mse: float = self.loss_function(input=global_prediction_t, target=global_groundtruth_t).item()
+                mean_mse: float = total_mse / global_prediction_t.numel()
                 mean_rmse: float = mean_mse ** 0.5
-                timestamps.extend([f'{t.strftime("%Y-%m-%d %H:00")}' for t in prediction_timestamps])
-                metric_notes.extend([f'MSE: {mean_mse:.4f}, RMSE: {mean_rmse:.4f}'] * dataset.bundle_size)
 
-        global_predictions: torch.Tensor = torch.cat(tensors=global_predictions, dim=1).squeeze(dim=0)
-        global_groundtruths: torch.Tensor = torch.cat(tensors=global_groundtruths, dim=1).squeeze(dim=0)
-        assert global_predictions.shape[0] == global_groundtruths.shape[0] == len(metric_notes)
+                timestamps.append(f'{prediction_timestamp.strftime("%Y-%m-%d %H:00")}')
+                metric_notes.append(f'MSE: {mean_mse:.4f}, RMSE: {mean_rmse:.4f}')
 
         # Plot the prediction
         plot_predictions_2d(
-            groundtruths=global_groundtruths, 
-            predictions=global_predictions, 
+            groundtruth=global_groundtruth.squeeze(dim=0), 
+            prediction=global_prediction.squeeze(dim=0), 
             timestamps=timestamps,
             metrics_notes=metric_notes, 
             reduction=partial(compute_velocity_field, dim=1),
@@ -109,80 +91,56 @@ class LocalOperatorPredictor:
         self.local_operator: LocalOperator = local_operator.to(device=self.device)
         self.loss_function: nn.Module = nn.MSELoss(reduction='sum').to(device=self.device)
 
-    def predict(self, dataset: ERA5_6Hour, plot_resolution: Tuple[int, int] | None) -> None:
+    def predict(self, dataset: ERA5_6Hour_Prediction, plot_resolution: Tuple[int, int] | None) -> None:
         # Set the operator to evaluation mode
         self.global_operator.eval()
         self.local_operator.eval()
-        # Batch size must be 1, must not shuffle
+        # Batch size should be 1 since len(dataset) == 1
         dataloader = DataLoader(
             dataset, 
             batch_size=1, 
-            shuffle=False, 
             num_workers=4, 
             prefetch_factor=3,
             pin_memory=True,
         )
-        # Use only the first input from the test dataset:
-        first_input: Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor] = next(iter(dataloader))
-        global_input: torch.Tensor = first_input[0].to(device=self.device)
-        local_input: torch.Tensor = first_input[2].to(device=self.device)
-        # Compute how many bundle from last step to keep 
-        n_retained_bundles: int = dataset.bundle_size - 1   # since each step predicts 1 bundle
+        # Extract the single sample from the prediction dataset:
+        global_input: torch.Tensor; local_input: torch.Tensor; local_groundtruth: torch.Tensor
+        global_input, _, local_input, local_groundtruth = next(iter(dataloader))
+        global_input = global_input.to(device=self.device)
+        local_input = local_input.to(device=self.device)
+        local_groundtruth = local_groundtruth.to(device=self.device)
 
-        local_groundtruths: List[torch.Tensor] = []
-        local_predictions: List[torch.Tensor] = []
+        # Keep track of groundtruths and predictions
         timestamps: List[str] = []
         metric_notes: List[str] = []
 
         with torch.no_grad():
-            # Make multi-step prediction
-            for bundle_id, (_, _, _, local_groundtruth) in enumerate(dataloader):
-                # Make one-step prediction
-                global_contexts: Tuple[torch.Tensor, ...]
-                global_prediction, *global_contexts = self.global_operator(input=global_input)
-                local_prediction: torch.Tensor = self.local_operator(
-                    input=local_input, global_contexts=list(global_contexts)
-                )
-                local_groundtruth: torch.Tensor = local_groundtruth.to(device=self.device)
-                assert local_prediction.shape == local_groundtruth.shape
-                local_groundtruths.append(local_groundtruth)
-                local_predictions.append(local_prediction)
-                # Prepare input for next step
-                if n_retained_bundles == 0:
-                    global_input = global_prediction
-                    local_input = local_prediction
-                else: 
-                    global_input = torch.cat(
-                        tensors=[
-                            global_input[:, -n_retained_bundles * dataset.bundle_size:, :, :, :],
-                            global_prediction,
-                        ],
-                        dim=1
-                    )
-                    local_input = torch.cat(
-                        tensors=[
-                            local_input[:, -n_retained_bundles * dataset.bundle_size:, :, :, :],
-                            local_prediction,
-                        ],
-                        dim=1
-                    )
-                # Compute prediction timestamps
-                prediction_timestamps: List[dt.datetime] = dataset.compute_timestamp(bundle_idx=bundle_id)[1]
-                # Compute metrics
-                total_mse: float = self.loss_function(input=local_prediction, target=local_groundtruth).item()
-                mean_mse: float = total_mse / local_prediction.numel()
+            # Make one-step prediction
+            global_contexts: Tuple[torch.Tensor, ...]
+            _, *global_contexts = self.global_operator(input=global_input)
+            local_prediction: torch.Tensor
+            local_prediction, *_ = self.local_operator(
+                input=local_input, global_contexts=list(global_contexts)
+            )
+            assert local_prediction.shape == local_groundtruth.shape
+            # Compute prediction timestamps
+            prediction_timestamps: List[dt.datetime] = dataset.compute_out_timestamps()
+            assert len(prediction_timestamps) == local_prediction.shape[1]
+            # Compute metrics separately for each timestep
+            for idx, prediction_timestamp in enumerate(prediction_timestamps):
+                local_prediction_t: torch.Tensor = local_prediction[:, idx, :, :, :]
+                local_groundtruth_t: torch.Tensor = local_groundtruth[:, idx, :, :, :]
+                total_mse: float = self.loss_function(input=local_prediction_t, target=local_groundtruth_t).item()
+                mean_mse: float = total_mse / local_prediction_t.numel()
                 mean_rmse: float = mean_mse ** 0.5
-                timestamps.extend([f'{t.strftime("%Y-%m-%d %H:00")}' for t in prediction_timestamps])
-                metric_notes.extend([f'MSE: {mean_mse:.4f}, RMSE: {mean_rmse:.4f}'] * dataset.bundle_size)
 
-        local_predictions: torch.Tensor = torch.cat(tensors=local_predictions, dim=1).squeeze(dim=0)
-        local_groundtruths: torch.Tensor = torch.cat(tensors=local_groundtruths, dim=1).squeeze(dim=0)
-        assert local_predictions.shape[0] == local_groundtruths.shape[0] == len(metric_notes)
+                timestamps.append(f'{prediction_timestamp.strftime("%Y-%m-%d %H:00")}')
+                metric_notes.append(f'MSE: {mean_mse:.4f}, RMSE: {mean_rmse:.4f}')
 
         # Plot the prediction
         plot_predictions_2d(
-            groundtruths=local_groundtruths, 
-            predictions=local_predictions, 
+            groundtruth=local_groundtruth.squeeze(dim=0), 
+            prediction=local_prediction.squeeze(dim=0), 
             timestamps=timestamps,
             metrics_notes=metric_notes, 
             reduction=partial(compute_velocity_field, dim=1),

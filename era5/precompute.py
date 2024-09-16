@@ -94,24 +94,46 @@ class TensorWriter:
 
     def write2disk(self) -> None:
         for idx in range(len(self)):
-            print(f"Writing sample {idx + 1}/{len(self)}...")
+            print(f"Y{self.year}: writing sample {idx + 1}/{len(self)}")
             suffix: str = '__' + self.datestrings[idx]
 
             if self.has_global:
                 global_input_filepath: str = os.path.join(self.global_input_directory, f'GI{self.year}{suffix}.pt')
                 global_output_filepath: str = os.path.join(self.global_output_directory, f'GO{self.year}{suffix}.pt')
-                if (not os.path.exists(path=global_input_filepath)) or (not os.path.exists(global_output_filepath)):
+                if (not self._check_existence(global_input_filepath)) or (not self._check_existence(global_output_filepath)):
                     global_input, global_output = self._to_tensor(idx=idx, is_global=True)
-                    torch.save(obj=global_input, f=global_input_filepath)
-                    torch.save(obj=global_output, f=global_output_filepath)
+                    self._clean_save(tensor=global_input, filepath=global_input_filepath)
+                    self._clean_save(tensor=global_output, filepath=global_output_filepath)
                 
             if self.has_local:
                 local_input_filepath: str = os.path.join(self.local_input_directory, f'LI{self.year}{suffix}.pt')
                 local_output_filepath: str = os.path.join(self.local_output_directory, f'LO{self.year}{suffix}.pt')
-                if (not os.path.exists(local_input_filepath)) or (not os.path.exists(local_output_filepath)):
+                if (not self._check_existence(local_input_filepath)) or (not self._check_existence(local_output_filepath)):
                     local_input, local_output = self._to_tensor(idx=idx, is_global=False)
-                    torch.save(obj=local_input, f=local_input_filepath)
-                    torch.save(obj=local_output, f=local_output_filepath)
+                    self._clean_save(tensor=local_input, filepath=local_input_filepath)
+                    self._clean_save(tensor=local_output, filepath=local_output_filepath)
+
+    @staticmethod
+    def _check_existence(filepath: str) -> bool:
+        if not os.path.exists(filepath):
+            return False
+        
+        file_directory: str = os.path.dirname(filepath)
+        file_sizes: List[int] = [
+            os.path.getsize(os.path.join(file_directory, fname)) 
+            for fname in os.listdir(file_directory)
+        ]
+        expected_file_size: int = max(set(file_sizes), key=file_sizes.count)  # most occurence
+        return os.path.getsize(filepath) == expected_file_size
+
+    @staticmethod
+    def _clean_save(tensor: torch.Tensor, filepath=str):
+        try:
+            torch.save(obj=tensor, f=filepath)
+        except KeyboardInterrupt:
+            if os.path.exists(filepath):
+                # Clean up partial file
+                os.remove(filepath)                
 
     def _to_tensor(self, idx: int, is_global: bool) -> Tuple[torch.Tensor, torch.Tensor]:
         if is_global:

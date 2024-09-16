@@ -6,9 +6,9 @@ import torch
 from torch.optim import Adam
 
 from models.operators import GlobalOperator, LocalOperator
-from era5.datasets import ERA5_6Hour
+from era5.datasets import ERA5_6Hour_Prediction
 from common.training import CheckpointLoader
-from workers.predictor import GlobalOperatorPredictor, LocalOperatorPredictor
+from workers.predictor import LocalOperatorPredictor
 
 
 def main(config: Dict[str, Any]) -> None:
@@ -25,8 +25,7 @@ def main(config: Dict[str, Any]) -> None:
     global_resolution: Tuple[int, int]  = tuple(config['dataset']['global_resolution'])
     local_latitude: Tuple[float, float] = tuple(config['dataset']['local_latitude'])
     local_longitude: Tuple[float, float] = tuple(config['dataset']['local_longitude'])
-    fromdate: str                       = str(config['predict']['fromdate'])
-    todate: str                         = str(config['predict']['todate'])
+    ondate: str                         = str(config['predict']['ondate'])
     indays: int                         = int(config['dataset']['indays'])
     outdays: int                        = int(config['dataset']['outdays'])
 
@@ -52,9 +51,8 @@ def main(config: Dict[str, Any]) -> None:
     )
 
     # Initialize the test dataset
-    dataset = ERA5_6Hour(
-        fromyear=fromdate,
-        toyear=todate,
+    dataset = ERA5_6Hour_Prediction(
+        ondate=ondate,
         global_latitude=global_latitude,
         global_longitude=global_longitude,
         global_resolution=global_resolution,

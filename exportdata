@@ -1,7 +1,7 @@
 #!/bin/bash
 
 CONFIG="config.yaml"
-YEAR=2016
+YEARS="2015"
 
-python cli/export_data.py --config="$CONFIG" --year=$YEAR
+python cli/export_data.py --config "$CONFIG" --years $YEARS
 

@@ -5,7 +5,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from models.modules import (
-    PatchEmbedding, PositionalEmbedding, 
+    InstanceNorm, PatchEmbedding, PositionalEmbedding, 
     GlobalAttention, AFNOLayer, LinearDecoder
 )
 
@@ -34,7 +34,7 @@ class _BaseOperator(nn.Module):
         self.patch_size: Tuple[int, int] = patch_size
         self.dropout_rate: float = dropout_rate
 
-        assert self.embedding_dim > self.patch_size[0] * self.patch_size[1] * self.in_channels, 'embedding_dim must be large enough'
+        assert self.embedding_dim > self.in_channels, 'embedding_dim must be large enough'
         assert self.embedding_dim % self.block_size == 0 and self.embedding_dim >= self.block_size, 'embedding_dim must be divisible by block_size'
         self.n_blocks: int = self.embedding_dim // self.block_size
 
@@ -44,6 +44,7 @@ class _BaseOperator(nn.Module):
         self.n_ypatches: int = self.spatial_resolution[1] // self.patch_size[1]
         self.n_patches: int = self.n_xpatches * self.n_ypatches
         
+        self.instance_norm = InstanceNorm(in_channels=in_channels, affine=False, track_running_stats=False)
         self.patch_embedding = PatchEmbedding(
             patch_size=self.patch_size, n_patches=self.n_patches,
             in_channels=self.in_channels, embedding_dim=self.embedding_dim,
@@ -97,7 +98,8 @@ class _BaseOperator(nn.Module):
                 'LocalOperator.embedding_dim must be equal to GlobalOperator.embedding_dim'
             )
 
-        embedding: torch.Tensor = self._get_embedding(input)
+        output: torch.Tensor = self.instance_norm(input)
+        embedding: torch.Tensor = self._get_embedding(output)
         assert embedding.shape == (batch_size, self.in_timesteps, self.n_patches, self.embedding_dim)
         # Fourier Layers
         out_contexts: List[torch.Tensor] = []
@@ -195,7 +197,7 @@ if __name__ == '__main__':
     
     local_output: torch.Tensor = local_operator(
         input=local_input, global_contexts=global_contexts,
-    )
+    )[0]
     print(f'local_output: {local_output.shape}')
 
 

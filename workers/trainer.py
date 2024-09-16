@@ -7,7 +7,7 @@ import torch.nn as nn
 from torch.utils.data import DataLoader
 from torch.optim import Optimizer
 
-
+from common.losses import TemporalMSE
 from common.training import Accumulator, EarlyStopping, Timer, Logger, CheckpointSaver
 
 from models.operators import GlobalOperator, LocalOperator
@@ -50,7 +50,9 @@ class _BaseOperatorTrainer(ABC):
             prefetch_factor=3,
             pin_memory=True,
         )
-        self.loss_function: nn.Module = nn.MSELoss(reduction='sum').to(self.device)
+        self.loss_function: nn.Module = TemporalMSE(
+            n_timesteps=train_dataset.out_timesteps, reduction='sum'
+        ).to(self.device)
 
     @abstractmethod
     def train(
@@ -129,7 +131,7 @@ class GlobalOperatorTrainer(_BaseOperatorTrainer):
                 # Forward propagation
                 self.optimizer.zero_grad()
                 batch_input += (
-                    torch.randn_like(input=batch_input, device=self.device) * batch_input.std() * self.noise_level
+                    torch.randn_like(input=batch_input, device=self.device) * batch_input.std(dim=2, keepdim=True) * self.noise_level
                 )
                 batch_prediction: torch.Tensor
                 batch_prediction, *_ = self.global_operator(input=batch_input)
@@ -205,7 +207,6 @@ class GlobalOperatorTrainer(_BaseOperatorTrainer):
                 total_mse_loss: torch.Tensor = self.loss_function(input=batch_prediction, target=batch_groundtruth)
                 # Accumulate the val_metrics
                 val_metrics.add(total_mse=total_mse_loss.item(), n_elems=batch_prediction.numel())
-                print('Evaluated 1 batch')
 
         # Compute the aggregate metrics
         val_mse: float = val_metrics['total_mse'] / val_metrics['n_elems']
@@ -285,13 +286,14 @@ class LocalOperatorTrainer(_BaseOperatorTrainer):
                 # Forward propagation
                 self.optimizer.zero_grad()
                 batch_local_input += (
-                    torch.randn_like(input=batch_local_input, device=self.device) * batch_local_input.std() * self.noise_level
+                    torch.randn_like(input=batch_local_input, device=self.device) * batch_local_input.std(dim=2, keepdim=True) * self.noise_level
                 )
                 with torch.no_grad():
                     batch_global_contexts: Tuple[torch.Tensor, ...]
                     _, *batch_global_contexts = self.global_operator(input=batch_global_input)
 
-                batch_local_prediction: torch.Tensor = self.local_operator(
+                batch_local_prediction: torch.Tensor
+                batch_local_prediction, *_ = self.local_operator(
                     input=batch_local_input, global_contexts=list(batch_global_contexts),
                 )
                 # Compute loss
@@ -364,7 +366,8 @@ class LocalOperatorTrainer(_BaseOperatorTrainer):
                 # Forward propagation
                 batch_global_contexts: Tuple[torch.Tensor, ...]
                 _, *batch_global_contexts = self.global_operator(input=batch_global_input)
-                batch_local_prediction: torch.Tensor = self.local_operator(
+                batch_local_prediction: torch.Tensor
+                batch_local_prediction, *_ = self.local_operator(
                     input=batch_local_input, global_contexts=batch_global_contexts,
                 )
                 # Compute loss

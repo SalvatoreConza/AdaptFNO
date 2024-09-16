@@ -1,7 +1,7 @@
 import os
+import re
 from typing import Tuple, List
 
-from functools import lru_cache
 import datetime as dt
 
 import torch
@@ -131,12 +131,11 @@ class ERA5_6Hour(Dataset):
         ])
 
 
-class ERA5_6Hour_Inference(ERA5_6Hour):
+class ERA5_6Hour_Prediction(ERA5_6Hour):
 
     def __init__(
         self,
-        fromdate: str,
-        todate: str,
+        ondate: str,
         global_latitude: Tuple[float, float] | None,
         global_longitude: Tuple[float, float] | None,
         global_resolution: Tuple[int, int] | None,
@@ -145,12 +144,11 @@ class ERA5_6Hour_Inference(ERA5_6Hour):
         indays: int,
         outdays: int,
     ):
-        self.fromdate: dt.datetime = dt.datetime.strptime(fromdate, '%Y%m%d')
-        self.todate: dt.datetime = dt.datetime.strptime(todate, '%Y%m%d')
+        self.ondate: dt.datetime = dt.datetime.strptime(ondate, '%Y%m%d')
 
         super().__init__(
-            fromyear=fromdate.year,
-            toyear=todate.year,
+            fromyear=self.ondate.year,
+            toyear=self.ondate.year,
             global_latitude=global_latitude,
             global_longitude=global_longitude,
             global_resolution=global_resolution,
@@ -159,29 +157,42 @@ class ERA5_6Hour_Inference(ERA5_6Hour):
             indays=indays,
             outdays=outdays,
         )
+        assert len(self) == 1, 'Prediction dataset must have a single sample'
 
     # override
     def _directory2filenames(self, directory: str) -> List[str]:
-        filenames: List[str] = []
-        for fname in os.listdir(path=directory):
-            min_date, max_date = self._filename2datetimes(filename=fname)
-            if self.fromdate <= min_date and max_date <= self.todate:
-                filenames.append(fname)
-        
-        return sorted(filenames)
+        # Get only one file that has the last input date matching with self.ondate
+        filename: str = next(
+            filter(
+                lambda fname: self._checkfilename(fname),
+                os.listdir(path=directory),
+            )
+        )
+        return [filename]
 
-    @staticmethod
-    def _filename2datetimes(filename: str) -> Tuple[dt.datetime, dt.datetime]:
+    def _checkfilename(self, filename: str) -> bool:
+        year = str(self.ondate.year)
+        month = str(self.ondate.month)
+        day = str(self.ondate.day)
+        components: List[str] = filename.split('__')
+        if year in components[0] and f'{month.zfill(2)}{day.zfill(2)}' in components[1].split('_')[-1]:
+            return True
+        return False
+    
+    def compute_out_timestamps(self) -> List[dt.datetime]:
+        filename: str = self.global_output_filenames[0] if self.has_global else self.local_input_filenames[0]
         components: List[str] = filename.split('__')
         year = int(components[0][-4:])
-        min_month = int(components[1].split('_')[0][:2])
-        min_day = int(components[1].split('_')[0][2:4])
-        max_month = int(components[2].split('_')[-1][:2])
-        max_day = int(components[2].split('_')[-1][2:4])
-        return (
-            dt.datetime(year=year, month=min_month, day=min_day), 
-            dt.datetime(year=year, month=max_month, day=max_day)
-        )
+        out_datestrings: List[str] = components[-1].replace('.pt','').split('_')
+        
+        out_timestamps: List[dt.datetime] = []
+        for datestring in out_datestrings:
+            for hour in [0, 6, 12, 18]:
+                out_timestamps.append(
+                    dt.datetime(year=year, month=int(datestring[:2]), day=int(datestring[2:4]), hour=hour, minute=0, second=0)
+                )
+        
+        return out_timestamps
 
 
 if __name__ == '__main__':
@@ -191,9 +202,9 @@ if __name__ == '__main__':
         toyear=2022,
         global_latitude=(45, -45),
         global_longitude=(60, 150),
-        global_resolution=None,
-        local_latitude=(30, -10),
-        local_longitude=(90, 130),
+        global_resolution=(128, 128),
+        local_latitude=None,
+        local_longitude=None,
         indays=3,
         outdays=1,
     )

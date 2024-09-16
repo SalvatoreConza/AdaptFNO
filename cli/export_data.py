@@ -1,11 +1,12 @@
 import argparse
-from typing import Tuple, Dict, Any
+from typing import List, Tuple, Dict, Any
 import yaml
+import signal
 
 from era5.precompute import TensorWriter
 
 
-def main(config: Dict[str, Any], year: int) -> None:
+def main(config: Dict[str, Any], years: List[int]) -> None:
     """
     Main function to write grib dataset to pytorch tensor files.
 
@@ -24,18 +25,19 @@ def main(config: Dict[str, Any], year: int) -> None:
     outdays: int                            = int(config['dataset']['outdays'])
 
     # Instatiate the training datasets
-    train_dataset = TensorWriter(
-        year=year,
-        global_latitude=tuple(global_latitude) if global_latitude else None,
-        global_longitude=tuple(global_longitude) if global_longitude else None,
-        global_resolution=tuple(global_resolution) if global_resolution else None,
-        local_latitude=tuple(local_latitude) if local_latitude else None,
-        local_longitude=tuple(local_longitude) if local_longitude else None,
-        indays=indays,
-        outdays=outdays,
-    )
-    # Write tensor files
-    train_dataset.write2disk()
+    for year in years:
+        train_dataset = TensorWriter(
+            year=year,
+            global_latitude=tuple(global_latitude) if global_latitude else None,
+            global_longitude=tuple(global_longitude) if global_longitude else None,
+            global_resolution=tuple(global_resolution) if global_resolution else None,
+            local_latitude=tuple(local_latitude) if local_latitude else None,
+            local_longitude=tuple(local_longitude) if local_longitude else None,
+            indays=indays,
+            outdays=outdays,
+        )
+        # Write tensor files
+        train_dataset.write2disk()
 
 
 if __name__ == "__main__":
@@ -43,7 +45,7 @@ if __name__ == "__main__":
     # Initialize the argument parser
     parser = argparse.ArgumentParser(description='Write grib dataset to pytorch tensor files')
     parser.add_argument('--config', type=str, required=True, help='Configuration file name.')
-    parser.add_argument('--year', type=int, required=True, help='Year of data to export')
+    parser.add_argument('--years', type=int, nargs='+', required=True, help='Year of data to export')
 
     args: argparse.Namespace = parser.parse_args()
     
@@ -52,4 +54,5 @@ if __name__ == "__main__":
         config: Dict[str, Any] = yaml.safe_load(f)
 
     # Run the main function with the configuration
-    main(config, args.year)
+    main(config, args.years)
+    signal.signal(signal.SIGTERM, lambda signal_number, frame: main(config, args.years))  # Retry when killed for run out of RAM

@@ -63,52 +63,52 @@ def plot_groundtruths_2d(
 
 
 def plot_predictions_2d(
-    groundtruths: torch.Tensor,
-    predictions: torch.Tensor,
+    groundtruth: torch.Tensor,
+    prediction: torch.Tensor,
     timestamps: List[str],
     metrics_notes: List[str],
     reduction: Callable[[torch.Tensor], torch.Tensor] | None = None,
     resolution: Tuple[int, int] | None = None,
 ) -> None:
 
-    assert groundtruths.shape == predictions.shape
-    assert groundtruths.ndim == 4   # (timesteps, u_dim, x_resolution, y_resolution)
+    assert groundtruth.shape == prediction.shape
+    assert groundtruth.ndim == 4   # (timesteps, u_dim, x_resolution, y_resolution)
     
     if reduction is not None:
-        groundtruths: torch.Tensor = reduction(groundtruths)
-        predictions: torch.Tensor = reduction(predictions)
+        groundtruth: torch.Tensor = reduction(groundtruth)
+        prediction: torch.Tensor = reduction(prediction)
 
-    assert groundtruths.shape[1] == predictions.shape[1] == 1, (
+    assert groundtruth.shape[1] == prediction.shape[1] == 1, (
         f'All physical fields must be aggregated to a single field for visualization, '
-        f'got predictions.shape[1]={predictions.shape[1]} and '
-        f'got groundtruths.shape[1]={groundtruths.shape[1]}'
+        f'got predictions.shape[1]={prediction.shape[1]} and '
+        f'got groundtruths.shape[1]={groundtruth.shape[1]}'
     )
-    assert len(metrics_notes) == groundtruths.shape[0]
+    assert len(metrics_notes) == groundtruth.shape[0]
 
     # Prepare output directory and move tensor to CPU
     destination_directory: str = './plots/prediction'
     os.makedirs(destination_directory, exist_ok=True)
-    groundtruths = groundtruths.to(device=torch.device('cpu'))
-    predictions = predictions.to(device=torch.device('cpu'))
+    groundtruth = groundtruth.to(device=torch.device('cpu'))
+    prediction = prediction.to(device=torch.device('cpu'))
 
     # Resize:
     if resolution is not None:
-        groundtruths: torch.Tensor = F.interpolate(input=groundtruths, size=resolution, mode='nearest')
-        predictions: torch.Tensor = F.interpolate(input=predictions, size=resolution, mode='nearest')
+        groundtruth: torch.Tensor = F.interpolate(input=groundtruth, size=resolution, mode='nearest')
+        prediction: torch.Tensor = F.interpolate(input=prediction, size=resolution, mode='nearest')
 
     # Ensure that the plot respect the tensor's shape
-    x_res: int = groundtruths.shape[2]
-    y_res: int = groundtruths.shape[3]
+    x_res: int = groundtruth.shape[2]
+    y_res: int = groundtruth.shape[3]
     aspect_ratio: float = x_res / y_res
 
     # Set plot configuration
     cmap: str = 'jet'
     vmin: float = 0.
-    vmax: float = groundtruths.max().item()
+    vmax: float = groundtruth.max().item()
 
-    for t in range(predictions.shape[0]):
-        gt_field: torch.Tensor = groundtruths[t]
-        pred_field: torch.Tensor = predictions[t]
+    for t in range(prediction.shape[0]):
+        gt_field: torch.Tensor = groundtruth[t]
+        pred_field: torch.Tensor = prediction[t]
         figwidth: float = 5.
         fig, axs = plt.subplots(2, 1, figsize=(figwidth, 2 * figwidth * aspect_ratio))
         axs[0].imshow(

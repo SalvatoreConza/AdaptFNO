@@ -6,6 +6,23 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 
+class InstanceNorm(nn.Module):
+
+    def __init__(self, in_channels: int, affine: bool, track_running_stats: bool) -> None:
+        super().__init__()
+        self.normalizer = nn.InstanceNorm3d(
+            num_features=in_channels, affine=affine, track_running_stats=track_running_stats,
+        )
+        self.in_channels: int = in_channels
+
+    def forward(self, input: torch.Tensor) -> torch.Tensor:
+        assert input.ndim == 5
+        output: torch.Tensor = input.transpose(1, 2)
+        output = self.normalizer(output).transpose(1, 2)
+        assert input.shape == output.shape
+        return output
+
+
 # DONE
 class PatchEmbedding(nn.Module):
 
@@ -38,7 +55,7 @@ class PatchEmbedding(nn.Module):
         output: torch.Tensor = input.flatten(start_dim=0, end_dim=1)
         output = self.projection(output)
         output = output.reshape(batch_size, in_timesteps, self.embedding_dim, self.n_patches)
-        return output.permute(0, 1, 3, 2)   # (batch_size, timesteps, n_patches, embedding_dim)
+        return output.permute(0, 1, 3, 2)   # (batch_size, in_timesteps, n_patches, embedding_dim)
 
 
 # DONE
@@ -266,17 +283,20 @@ class LinearDecoder(nn.Module):
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
         assert input.ndim == 4
-        batch_size, n_timesteps = input.shape[:2]
-        assert (batch_size, n_timesteps, self.n_patches, self.in_channels) == input.shape
+        batch_size, in_timesteps = input.shape[:2]
+        assert (batch_size, in_timesteps, self.n_patches, self.in_channels) == input.shape
         # Temporal decoding
         output: torch.Tensor = self.temporal_decoder(input.permute(0, 2, 3, 1))
-        output = output.permute(0, 3, 1, 2) # batch_size, n_timesteps, self.n_patches, self.in_channels
+        output = output.permute(0, 3, 1, 2) # batch_size, out_timesteps, self.n_patches, self.in_channels
         # Spatial decoding
         output = self.spatial_decoder(output)
-        # Reshape
-        output = output.flatten(start_dim=2)
         assert output.shape == (
-            batch_size, self.out_timesteps, self.n_patches * self.out_channels * self.patch_size[0] * self.patch_size[1]
+            batch_size, self.out_timesteps, self.n_patches, self.out_channels * self.patch_size[0] * self.patch_size[1]
+        )
+        # Reshape
+        output = output.transpose(2, 3).flatten(start_dim=2)
+        assert output.shape == (
+            batch_size, self.out_timesteps, self.out_channels * self.patch_size[0] * self.patch_size[1] * self.n_patches
         )
         output = output.reshape(
             batch_size, self.out_timesteps, self.out_channels, self.x_resolution, self.y_resolution

@@ -60,3 +60,34 @@ class VGG16Loss(nn.Module):
         else:
             return total_loss / batch_size
 
+
+class TemporalMSE(nn.Module):
+
+    def __init__(self, n_timesteps: int, reduction: str):
+        super().__init__()
+        self.n_timesteps: int = n_timesteps
+        self.reduction: str = reduction
+        self.loss_function = nn.MSELoss(reduction='none')
+        self.temporal_weights: torch.Tensor = self._weight_distribution()
+
+    def forward(self, input: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+        assert input.shape == target.shape
+        assert input.ndim == 5
+        weighted_loss: torch.Tensor = (
+            self.loss_function(input=input, target=target) * self.temporal_weights.to(device=input.device)
+        )
+        if self.reduction == 'mean':
+            weighted_loss = weighted_loss.mean()
+        elif self.reduction == 'sum':
+            weighted_loss = weighted_loss.sum()
+        
+        return weighted_loss
+
+    def _weight_distribution(self) -> torch.Tensor:
+        temporal_weights: torch.Tensor = torch.arange(
+            start=self.n_timesteps, end=0, step=-1, 
+            requires_grad=False,
+        )
+        temporal_weights = temporal_weights / temporal_weights.sum() * self.n_timesteps # weight_sum == n_timesteps, not 1
+        return temporal_weights.reshape(1, self.n_timesteps, 1, 1, 1)
+
