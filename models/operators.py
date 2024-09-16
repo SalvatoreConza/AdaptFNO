@@ -6,7 +6,7 @@ import torch.nn.functional as F
 
 from models.modules import (
     InstanceNorm, PatchEmbedding, PositionalEmbedding, 
-    GlobalAttention, AFNOLayer, LinearDecoder
+    GlobalAttention, AFNOLayer, LinearDecoder_
 )
 
 class _BaseOperator(nn.Module):
@@ -62,12 +62,11 @@ class _BaseOperator(nn.Module):
                 for _ in range(n_layers)
             ]
         )
-        self.linear_decoder = LinearDecoder(
+        self.linear_decoder = LinearDecoder_(
             in_channels=self.embedding_dim, out_channels=self.out_channels,
             in_timesteps=self.in_timesteps, out_timesteps=self.out_timesteps,
             n_xpatches=self.n_xpatches, n_ypatches=self.n_ypatches,
             patch_size=self.patch_size,
-            dropout_rate=dropout_rate,
         )
         self.dropout = nn.Dropout(p=dropout_rate)
         self.attentions = None
@@ -103,7 +102,9 @@ class _BaseOperator(nn.Module):
         assert embedding.shape == (batch_size, self.in_timesteps, self.n_patches, self.embedding_dim)
         # Fourier Layers
         out_contexts: List[torch.Tensor] = []
-        output: torch.Tensor = embedding
+        output: torch.Tensor = embedding.reshape(
+            batch_size, self.in_timesteps, self.n_xpatches, self.n_ypatches, self.embedding_dim
+        )
         for i in range(self.n_layers):
             afno_layer: AFNOLayer = self.afno_layers[i]
             output = afno_layer(output)
@@ -117,7 +118,9 @@ class _BaseOperator(nn.Module):
                 output = attention(global_context=in_contexts[i], local_context=output)
 
         # Linear decoder
-        assert output.shape == embedding.shape
+        assert output.shape == (
+            batch_size, self.in_timesteps, self.n_xpatches, self.n_ypatches, self.embedding_dim
+        )
         output: torch.Tensor = self.linear_decoder(output)
         assert output.shape == (
             batch_size, self.out_timesteps, self.out_channels, self.spatial_resolution[0], self.spatial_resolution[1]

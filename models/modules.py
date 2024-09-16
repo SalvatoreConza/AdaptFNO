@@ -150,20 +150,17 @@ class AFNOLayer(nn.Module):
         self.droppath = DropPath(p=dropout_rate)
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
-        assert input.ndim == 4
-        batch_size, n_timesteps, n_patches, embedding_dim = input.shape
+        assert input.ndim == 5
+        batch_size, n_timesteps, n_xpatches, n_ypatches, embedding_dim = input.shape
         assert embedding_dim == self.embedding_dim
-        assert n_patches == self.n_xpatches * self.n_ypatches
+        assert n_xpatches == self.n_xpatches
+        assert n_ypatches == self.n_ypatches
 
         residual: torch.Tensor = input
-        input = self.ln1(input)
+        output: torch.Tensor = self.ln1(input)
 
-        # Reshape input back to 2D in spatial domain
-        reshaped_input: torch.Tensor = input.reshape(
-            batch_size, n_timesteps, self.n_xpatches, self.n_ypatches, embedding_dim
-        )
         # Fourier transform (Token mixing)
-        fourier_coeff: torch.Tensor = torch.fft.rfft2(input=reshaped_input, dim=(2, 3), norm="ortho")
+        fourier_coeff: torch.Tensor = torch.fft.rfft2(input=output, dim=(2, 3), norm="ortho")
         # Linear transformation with shared weight (Channel mixing)
         x_modes = fourier_coeff.shape[2]
         y_modes = fourier_coeff.shape[3]
@@ -225,11 +222,9 @@ class AFNOLayer(nn.Module):
         assert output.shape == (
             batch_size, n_timesteps, self.n_xpatches, self.n_ypatches, embedding_dim
         )
-        # Reshape input back to 1D in spatial domain
-        output = output.reshape(input.shape)
-        output = output + input
         # Skip connection
-        output = output + residual
+        output = output + input
+        output = output + residual  # double skip
         residual = output
         # MLP
         output = self.ln2(output)
@@ -252,7 +247,6 @@ class LinearDecoder(nn.Module):
         n_xpatches: int,
         n_ypatches: int,
         patch_size: Tuple[int, int],
-        dropout_rate: float
     ):
         super().__init__()
         self.in_channels: int = in_channels
@@ -263,45 +257,93 @@ class LinearDecoder(nn.Module):
         self.patch_size: Tuple[int, int] = patch_size
         self.x_resolution: int = patch_size[0] * n_xpatches
         self.y_resolution: int = patch_size[1] * n_ypatches
-        self.n_patches: int = self.n_xpatches * self.n_ypatches
-        self.dropout = nn.Dropout(p=dropout_rate)
 
-        self.temporal_decoder = nn.Sequential(
-            nn.Linear(
-                in_features=in_timesteps,
-                out_features=out_timesteps,
-            ),
-            nn.GELU(),
-            self.dropout,
-        )
-        self.spatial_decoder = nn.Sequential(
-            nn.Linear(
-                in_features=in_channels,
-                out_features=out_channels * patch_size[0] * patch_size[1],
-            ),
+        self.temporal_decoder = nn.Linear(in_features=in_timesteps, out_features=out_timesteps)
+        self.spatial_decoder = nn.Linear(
+            in_features=in_channels,
+            out_features=patch_size[0] * patch_size[1] * out_channels,
         )
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
-        assert input.ndim == 4
+        assert input.ndim == 5
         batch_size, in_timesteps = input.shape[:2]
-        assert (batch_size, in_timesteps, self.n_patches, self.in_channels) == input.shape
+        assert (batch_size, in_timesteps, self.n_xpatches, self.n_ypatches, self.in_channels) == input.shape
         # Temporal decoding
-        output: torch.Tensor = self.temporal_decoder(input.permute(0, 2, 3, 1))
-        output = output.permute(0, 3, 1, 2) # batch_size, out_timesteps, self.n_patches, self.in_channels
+        output: torch.Tensor = self.temporal_decoder(input.permute(0, 2, 3, 4, 1))
+        output = output.permute(0, 4, 1, 2, 3) # batch_size, out_timesteps, self.n_xpatches, self.n_ypatches, self.in_channels
         # Spatial decoding
         output = self.spatial_decoder(output)
         assert output.shape == (
-            batch_size, self.out_timesteps, self.n_patches, self.out_channels * self.patch_size[0] * self.patch_size[1]
+            batch_size, self.out_timesteps, self.n_xpatches, self.n_ypatches, self.patch_size[0] * self.patch_size[1] * self.out_channels
         )
         # Reshape
-        output = output.transpose(2, 3).flatten(start_dim=2)
-        assert output.shape == (
-            batch_size, self.out_timesteps, self.out_channels * self.patch_size[0] * self.patch_size[1] * self.n_patches
-        )
         output = output.reshape(
+            batch_size, self.out_timesteps, self.n_xpatches, self.n_ypatches, self.patch_size[0], self.patch_size[1], self.out_channels
+        )
+        output = output.permute(0, 1, 6, 2, 4, 3, 5)
+        output = output.flatten(start_dim=3, end_dim=4)
+        output = output.flatten(start_dim=4, end_dim=5)
+        assert output.shape == (
             batch_size, self.out_timesteps, self.out_channels, self.x_resolution, self.y_resolution
         )
         return output
+
+
+# Experimental
+class LinearDecoder_(nn.Module):
+
+    def __init__(
+        self, 
+        in_channels: int,
+        out_channels: int,
+        in_timesteps: int,
+        out_timesteps: int,
+        n_xpatches: int,
+        n_ypatches: int,
+        patch_size: Tuple[int, int],
+    ):
+        super().__init__()
+        self.in_channels: int = in_channels
+        self.out_channels: int = out_channels
+        self.out_timesteps: int = out_timesteps
+        self.n_xpatches: int = n_xpatches
+        self.n_ypatches: int = n_ypatches
+        self.patch_size: Tuple[int, int] = patch_size
+        self.x_resolution: int = patch_size[0] * n_xpatches
+        self.y_resolution: int = patch_size[1] * n_ypatches
+
+        self.temporal_decoder = nn.Linear(in_features=in_timesteps, out_features=out_timesteps)
+        self.spatial_decoder = nn.Sequential(
+            nn.ConvTranspose2d(
+                in_channels=in_channels, 
+                out_channels=in_channels,
+                kernel_size=patch_size, 
+                stride=patch_size,
+            ),
+            nn.Conv2d(
+                in_channels=in_channels,
+                out_channels=out_channels,
+                kernel_size=3,
+                padding=1,
+                padding_mode='replicate',
+            )
+        )
+
+
+    def forward(self, input: torch.Tensor) -> torch.Tensor:
+        assert input.ndim == 5
+        batch_size, in_timesteps = input.shape[:2]
+        assert (batch_size, in_timesteps, self.n_xpatches, self.n_ypatches, self.in_channels) == input.shape
+        # Temporal decoding
+        output: torch.Tensor = self.temporal_decoder(input.transpose(1, 4))
+        output = output.permute(0, 4, 1, 2, 3) # batch_size, out_timesteps, self.in_channels, self.n_xpatches, self.n_ypatches
+        # Spatial decoding
+        output = output.flatten(start_dim=0, end_dim=1)
+        output = self.spatial_decoder(output)
+        assert output.shape == (
+            batch_size * self.out_timesteps, self.out_channels, self.x_resolution, self.y_resolution
+        )
+        return output.reshape(batch_size, self.out_timesteps, self.out_channels, self.x_resolution, self.y_resolution)
 
 
 # DONE
@@ -328,7 +370,7 @@ class GlobalAttention(nn.Module):
         global_context: torch.Tensor, 
         local_context: torch.Tensor,
     ) -> torch.Tensor:
-        assert global_context.ndim == local_context.ndim == 4
+        assert global_context.ndim == local_context.ndim == 5
         assert global_context.shape[:2] == local_context.shape[:2]
         batch_size, n_timesteps = local_context.shape[:2]
         assert global_context.shape[-1] == local_context.shape[-1] == self.embedding_dim
@@ -351,17 +393,17 @@ class GlobalAttention(nn.Module):
 
     @staticmethod
     def _transform_shape(input: torch.Tensor) -> torch.Tensor:
-        assert input.ndim == 4
-        batch_size, n_timesteps, n_patches, embedding_dim = input.shape
-        output: torch.Tensor = input.flatten(start_dim=1, end_dim=2)
-        return  output.permute(1, 0, 2) # n_timesteps * n_patches, batch_size, embedding_dim
+        assert input.ndim == 5
+        batch_size, n_timesteps, n_xpatches, n_ypatches, embedding_dim = input.shape
+        output: torch.Tensor = input.flatten(start_dim=1, end_dim=3) # attend to different space in different time
+        return  output.permute(1, 0, 2) # n_timesteps * n_xpatches * n_ypatches, batch_size, embedding_dim
     
     @staticmethod
-    def _untransform_shape(input: torch.Tensor, n_timesteps: int, n_patches: int) -> torch.Tensor:
+    def _untransform_shape(input: torch.Tensor, n_timesteps: int, n_xpatches: int, n_ypatches: int) -> torch.Tensor:
         assert input.ndim == 3
         sequence_length, batch_size, embedding_dim = input.shape
-        output: torch.Tensor = input.reshape(n_timesteps, n_patches, batch_size, embedding_dim)
-        return output.permute(2, 0, 1, 3)   # batch_size, n_timesteps, n_patches, embedding_dim
+        output: torch.Tensor = input.reshape(n_timesteps, n_xpatches, n_ypatches, batch_size, embedding_dim)
+        return output.permute(3, 0, 1, 2, 4)   # batch_size, n_timesteps, n_xpatches, n_ypatches, embedding_dim
 
 
 

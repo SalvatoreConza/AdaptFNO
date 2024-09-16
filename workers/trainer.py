@@ -6,10 +6,10 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
 from torch.optim import Optimizer
+from torch.amp import autocast, GradScaler
 
 from common.losses import TemporalMSE
 from common.training import Accumulator, EarlyStopping, Timer, Logger, CheckpointSaver
-
 from models.operators import GlobalOperator, LocalOperator
 from era5.datasets import ERA5_6Hour
 
@@ -53,6 +53,8 @@ class _BaseOperatorTrainer(ABC):
         self.loss_function: nn.Module = TemporalMSE(
             n_timesteps=train_dataset.out_timesteps, reduction='sum'
         ).to(self.device)
+
+        self.grad_scaler = GradScaler(device="cuda")
 
     @abstractmethod
     def train(
@@ -133,14 +135,18 @@ class GlobalOperatorTrainer(_BaseOperatorTrainer):
                 batch_input += (
                     torch.randn_like(input=batch_input, device=self.device) * batch_input.std(dim=2, keepdim=True) * self.noise_level
                 )
-                batch_prediction: torch.Tensor
-                batch_prediction, *_ = self.global_operator(input=batch_input)
-                # Compute loss
-                total_mse_loss: torch.Tensor = self.loss_function(input=batch_prediction, target=batch_groundtruth)
-                mean_mse_loss: torch.Tensor = total_mse_loss / batch_prediction.numel()
+                # Use automatic mixed precision to speed up on A100/H100 GPUs
+                with autocast(device_type="cuda", dtype=torch.float16):
+                    batch_prediction: torch.Tensor
+                    batch_prediction, *_ = self.global_operator(input=batch_input)
+                    # Compute loss
+                    total_mse_loss: torch.Tensor = self.loss_function(input=batch_prediction, target=batch_groundtruth)
+                    mean_mse_loss: torch.Tensor = total_mse_loss / batch_prediction.numel()
+            
                 # Backpropagation
-                mean_mse_loss.backward()
-                self.optimizer.step()
+                self.grad_scaler.scale(mean_mse_loss).backward()
+                self.grad_scaler.step(self.optimizer)
+                self.grad_scaler.update()
 
                 # Accumulate the metrics
                 train_metrics.add(total_mse=total_mse_loss.item(), n_elems=batch_prediction.numel())

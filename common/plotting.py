@@ -136,5 +136,17 @@ def plot_predictions_2d(
 
 
 
+if __name__ == '__main__':
+    from common.functional import compute_velocity_field
+
+    gt = torch.load('tensors/globals/23204fccf8640f80d63a5150354b927e/input/GI2015__0101_0102_0103_0104_0105_0106_0107_0108_0109_0110__0111_0112_0113.pt')
+    gt = gt[:, 18, :, :].unsqueeze(dim=1)    # plot each individual variable
+    print(gt.shape)
+    plot_groundtruths_2d(
+        groundtruths=gt,
+        # reduction=lambda x: compute_velocity_field(x, dim=1),
+        reduction=None,
+        resolution=(128, 128)
+    )
     
 
