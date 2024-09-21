@@ -6,7 +6,7 @@ dataset:
   global_resolution: [128, 128]  # [x_res, y_res] or null to keep the original resolution
   local_latitude: [30, -10]
   local_longitude: [90, 130]
-  train_fromyear: 2012
+  train_fromyear: 2000
   train_toyear: 2022
   val_fromyear: 2023
   val_toyear: 2024
@@ -14,11 +14,11 @@ dataset:
   outdays: 3
 
 global_architecture:
-  embedding_dim: 768
+  embedding_dim: 2048
   n_layers: 12
-  block_size: 96
-  patch_size: [4, 4]
-  dropout_rate: 0.1
+  block_size: 2048
+  patch_size: [128, 128]
+  dropout_rate: 0.
   from_checkpoint: null   # set to null to train from scratch
 
 local_architecture:
@@ -30,17 +30,17 @@ local_architecture:
 
 training:
   noise_level: 0.
-  train_batch_size: 4
-  val_batch_size: 2
+  train_batch_size: 8
+  val_batch_size: 4
   learning_rate: 0.001   # has no effect if the according `from_checkpoint` is given (not null)
   n_epochs: 1000
   patience: 50
   tolerance: 0.
-  save_frequency: 5
+  save_frequency: 1
 
 predict:
-  ondate: '20240110'
-  from_global_checkpoint: '.checkpoints/global/epoch40.pt'
+  ondate: '20210110'
+  from_global_checkpoint: '.checkpoints/global/epoch10.pt'
   from_local_checkpoint: '.checkpoints/local/1000/epoch105.pt'
   global_plot_resolution: null   # set to null to respect the true resolution
   local_plot_resolution: null   # set to null to respect the true resolution

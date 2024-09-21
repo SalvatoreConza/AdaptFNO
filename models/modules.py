@@ -174,36 +174,25 @@ class AFNOLayer(nn.Module):
         output2_real = torch.zeros(fourier_coeff.shape, device=input.device)
         output2_imag = torch.zeros(fourier_coeff.shape, device=input.device)
 
-        total_modes: int = y_modes
-        kept_modes: int = 12
-
-        value_slice: Tuple[slice, ...] = (
-            slice(None),                                                # batch_size
-            slice(None),                                                # n_timesteps
-            slice(total_modes - kept_modes, total_modes + kept_modes),  # x_modes
-            slice(None, kept_modes),                                    # y_modes
-            slice(None),                                                # n_blocks
-            slice(None),                                                # block_size
-        )
         ops: str = 'btxyni,nio->btxyno'
-        output1_real[value_slice] = F.gelu(
-            torch.einsum(ops, fourier_coeff[value_slice].real, self.w1[0]) 
-            - torch.einsum(ops, fourier_coeff[value_slice].imag, self.w1[1]) 
+        output1_real = F.gelu(
+            torch.einsum(ops, fourier_coeff.real, self.w1[0]) 
+            - torch.einsum(ops, fourier_coeff.imag, self.w1[1]) 
             + self.b1[0]
         )
-        output1_imag[value_slice] = F.gelu(
-            torch.einsum(ops, fourier_coeff[value_slice].imag, self.w1[0]) 
-            + torch.einsum(ops, fourier_coeff[value_slice].real, self.w1[1]) 
+        output1_imag = F.gelu(
+            torch.einsum(ops, fourier_coeff.imag, self.w1[0]) 
+            + torch.einsum(ops, fourier_coeff.real, self.w1[1]) 
             + self.b1[1]
         )
-        output2_real[value_slice] = (
-            torch.einsum(ops, output1_real[value_slice], self.w2[0]) 
-            - torch.einsum(ops, output1_imag[value_slice], self.w2[1]) 
+        output2_real = (
+            torch.einsum(ops, output1_real, self.w2[0]) 
+            - torch.einsum(ops, output1_imag, self.w2[1]) 
             + self.b2[0]
         )
-        output2_imag[value_slice] = (
-            torch.einsum(ops, output1_imag[value_slice], self.w2[0]) 
-            + torch.einsum(ops, output1_real[value_slice], self.w2[1]) 
+        output2_imag = (
+            torch.einsum(ops, output1_imag, self.w2[0]) 
+            + torch.einsum(ops, output1_real, self.w2[1]) 
             + self.b2[1]
         )
         output: torch.Tensor = torch.stack([output2_real, output2_imag], dim=-1)
@@ -233,6 +222,51 @@ class AFNOLayer(nn.Module):
         return output   # output.shape == input.shape
 
 
+class Filter(nn.Module):
+
+    def __init__(self, n_channels: int, n_hiddens: int, depth: int) -> None:
+        super().__init__()
+        self.n_channels: int = n_channels
+        self.n_hiddens: int = n_hiddens
+        self.depth: int = depth
+
+        self.conv1 = nn.Conv2d(
+            in_channels=n_channels, out_channels=n_hiddens, 
+            kernel_size=3, padding=1, stride=1,
+        )
+        self.blocks = nn.ModuleList(
+            modules=[
+                nn.Sequential(
+                    nn.Conv2d(in_channels=n_hiddens, out_channels=n_hiddens, kernel_size=1, stride=1),
+                    nn.ReLU(),
+                    nn.Conv2d(in_channels=n_hiddens, out_channels=n_hiddens, kernel_size=1, stride=1),
+                )
+                for _ in range(self.depth)
+            ]
+        )
+        self.conv2 = nn.Conv2d(
+            in_channels=n_hiddens, out_channels=n_channels, 
+            kernel_size=3, padding=1, stride=1,
+        )
+
+    def forward(self, input: torch.Tensor) -> torch.Tensor:
+        assert input.ndim == 5
+        batch_size, n_timesteps, n_channels, x_resolution, y_resolution = input.shape
+        output: torch.Tensor = input.flatten(start_dim=0, end_dim=1)
+        # First conv block
+        output = self.conv1(output)
+        # Residual connection blocks
+        for block in self.blocks:
+            output = block(output) + output
+        
+        # Last conv block
+        output = self.conv2(output)
+        assert output.shape == (
+            batch_size * n_timesteps, n_channels, x_resolution, y_resolution
+        )
+        return output.reshape(batch_size, n_timesteps, n_channels, x_resolution, y_resolution)
+        
+
 # DONE
 class LinearDecoder(nn.Module):
 
@@ -256,7 +290,13 @@ class LinearDecoder(nn.Module):
         self.x_resolution: int = patch_size[0] * n_xpatches
         self.y_resolution: int = patch_size[1] * n_ypatches
 
-        self.temporal_decoder = nn.Linear(in_features=in_timesteps, out_features=out_timesteps)
+        self.temporal_decoder = nn.Sequential(
+            nn.Linear(in_features=in_timesteps, out_features=in_timesteps * 4),
+            nn.ReLU(),
+            nn.Linear(in_features=in_timesteps * 4, out_features=in_timesteps * 4),
+            nn.ReLU(),
+            nn.Linear(in_features=in_timesteps * 4, out_features=out_timesteps),
+        )
         self.spatial_decoder = nn.Linear(
             in_features=in_channels,
             out_features=patch_size[0] * patch_size[1] * out_channels,
@@ -285,61 +325,6 @@ class LinearDecoder(nn.Module):
             batch_size, self.out_timesteps, self.out_channels, self.x_resolution, self.y_resolution
         )
         return output
-
-
-# Experimental
-class LinearDecoder_(nn.Module):
-
-    def __init__(
-        self, 
-        in_channels: int,
-        out_channels: int,
-        in_timesteps: int,
-        out_timesteps: int,
-        n_xpatches: int,
-        n_ypatches: int,
-        patch_size: Tuple[int, int],
-    ):
-        super().__init__()
-        self.in_channels: int = in_channels
-        self.out_channels: int = out_channels
-        self.out_timesteps: int = out_timesteps
-        self.n_xpatches: int = n_xpatches
-        self.n_ypatches: int = n_ypatches
-        self.patch_size: Tuple[int, int] = patch_size
-        self.x_resolution: int = patch_size[0] * n_xpatches
-        self.y_resolution: int = patch_size[1] * n_ypatches
-
-        self.temporal_decoder = nn.Linear(in_features=in_timesteps, out_features=out_timesteps)
-        self.spatial_decoder = nn.ConvTranspose2d(
-            in_channels=in_channels, 
-            out_channels=out_channels,
-            kernel_size=patch_size, 
-            stride=patch_size,
-        )
-        self.conv = nn.Conv2d(
-            in_channels=out_channels,
-            out_channels=out_channels,
-            kernel_size=3,
-            padding=1,
-            padding_mode='replicate',
-        )
-
-    def forward(self, input: torch.Tensor) -> torch.Tensor:
-        assert input.ndim == 5
-        batch_size, in_timesteps = input.shape[:2]
-        assert (batch_size, in_timesteps, self.n_xpatches, self.n_ypatches, self.in_channels) == input.shape
-        # Temporal decoding
-        output: torch.Tensor = self.temporal_decoder(input.transpose(1, 4))
-        output = output.permute(0, 4, 1, 2, 3) # batch_size, out_timesteps, self.in_channels, self.n_xpatches, self.n_ypatches
-        # Spatial decoding
-        output = output.flatten(start_dim=0, end_dim=1)
-        output = self.spatial_decoder(output)
-        output = output + self.conv(output)
-        assert output.shape == (
-            batch_size * self.out_timesteps, self.out_channels, self.x_resolution, self.y_resolution
-        )
-        return output.reshape(batch_size, self.out_timesteps, self.out_channels, self.x_resolution, self.y_resolution)
 
 
 # DONE

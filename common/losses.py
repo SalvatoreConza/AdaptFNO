@@ -69,7 +69,7 @@ class TemporalMSE(nn.Module):
         self.reduction: str = reduction
         self.loss_function = nn.MSELoss(reduction='none')
         # self.temporal_weights: nn.Parameter = self._linearly_decayed_weights()
-        self.temporal_weights: nn.Parameter = self._exponentially_decayed_weights(decay_rate=0.1)
+        self.temporal_weights: nn.Parameter = self._exponentially_decayed_weights(decay_rate=0.2)
 
     def forward(self, input: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
         assert input.shape == target.shape

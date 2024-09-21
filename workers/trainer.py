@@ -130,13 +130,13 @@ class GlobalOperatorTrainer(_BaseOperatorTrainer):
                 # Move to the selected device
                 batch_input: torch.Tensor = batch_input.to(device=self.device)
                 batch_groundtruth: torch.Tensor = batch_groundtruth.to(device=self.device)
-                # Forward propagation
                 self.optimizer.zero_grad()
                 batch_input += (
                     torch.randn_like(input=batch_input, device=self.device) * batch_input.std(dim=2, keepdim=True) * self.noise_level
                 )
                 # Use automatic mixed precision to speed up on A100/H100 GPUs
                 with autocast(device_type="cuda", dtype=torch.float16):
+                    # Forward propagation
                     batch_prediction: torch.Tensor
                     batch_prediction, *_ = self.global_operator(input=batch_input)
                     # Compute loss
@@ -289,26 +289,29 @@ class LocalOperatorTrainer(_BaseOperatorTrainer):
                 batch_global_input: torch.Tensor = batch_global_input.to(device=self.device)
                 batch_local_input: torch.Tensor = batch_local_input.to(device=self.device)
                 batch_local_groundtruth: torch.Tensor = batch_local_groundtruth.to(device=self.device)
-                # TODO: implement amp
-                # Forward propagation
                 self.optimizer.zero_grad()
                 batch_local_input += (
                     torch.randn_like(input=batch_local_input, device=self.device) * batch_local_input.std(dim=2, keepdim=True) * self.noise_level
                 )
-                with torch.no_grad():
-                    batch_global_contexts: Tuple[torch.Tensor, ...]
-                    _, *batch_global_contexts = self.global_operator(input=batch_global_input)
+                # Use automatic mixed precision to speed up on A100/H100 GPUs
+                with autocast(device_type="cuda", dtype=torch.float16):
+                    # Forward propagation
+                    with torch.no_grad():
+                        batch_global_contexts: Tuple[torch.Tensor, ...]
+                        _, *batch_global_contexts = self.global_operator(input=batch_global_input)
 
-                batch_local_prediction: torch.Tensor
-                batch_local_prediction, *_ = self.local_operator(
-                    input=batch_local_input, global_contexts=list(batch_global_contexts),
-                )
-                # Compute loss
-                total_mse_loss: torch.Tensor = self.loss_function(input=batch_local_prediction, target=batch_local_groundtruth)
-                mean_mse_loss: torch.Tensor = total_mse_loss / batch_local_prediction.numel()
-                # Back propagation
-                mean_mse_loss.backward()
-                self.optimizer.step()
+                    batch_local_prediction: torch.Tensor
+                    batch_local_prediction, *_ = self.local_operator(
+                        input=batch_local_input, global_contexts=list(batch_global_contexts),
+                    )
+                    # Compute loss
+                    total_mse_loss: torch.Tensor = self.loss_function(input=batch_local_prediction, target=batch_local_groundtruth)
+                    mean_mse_loss: torch.Tensor = total_mse_loss / batch_local_prediction.numel()
+
+                # Backpropagation
+                self.grad_scaler.scale(mean_mse_loss).backward()
+                self.grad_scaler.step(self.optimizer)
+                self.grad_scaler.update()
 
                 # Accumulate the metrics
                 train_metrics.add(total_mse=total_mse_loss.item(), n_elems=batch_local_prediction.numel())

@@ -6,7 +6,7 @@ import torch.nn.functional as F
 
 from models.modules import (
     InstanceNorm, PatchEmbedding, PositionalEmbedding, 
-    GlobalAttention, AFNOLayer, LinearDecoder_, LinearDecoder
+    GlobalAttention, AFNOLayer, LinearDecoder
 )
 
 class _BaseOperator(nn.Module):
