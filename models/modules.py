@@ -327,7 +327,6 @@ class LinearDecoder(nn.Module):
         return output
 
 
-# DONE
 class GlobalAttention(nn.Module):
 
     def __init__(
@@ -338,12 +337,21 @@ class GlobalAttention(nn.Module):
         super().__init__()
         self.embedding_dim: int = embedding_dim
         self.n_heads: int = n_heads
-
-        self.attention = nn.MultiheadAttention(
-            embed_dim=self.embedding_dim,
-            num_heads=self.n_heads,
-            dropout=0.1,
+        self.cross_attention = nn.MultiheadAttention(
+            embed_dim=embedding_dim,
+            num_heads=n_heads,
             bias=True,
+        )
+        self.feedforward = nn.Sequential(
+            nn.Linear(
+                in_features=embedding_dim,
+                out_features=embedding_dim,
+            ),
+            nn.ReLU(),
+            nn.Linear(
+                in_features=embedding_dim,
+                out_features=embedding_dim,
+            ),
         )
 
     def forward(
@@ -358,18 +366,53 @@ class GlobalAttention(nn.Module):
         # NOTE: global_context and local_context may have diferent number of patches
 
         global_context_reshaped: torch.Tensor = self._transform_shape(input=global_context)
-        local_context_reshape: torch.Tensor = self._transform_shape(input=local_context)
-        output: torch.Tensor = self.attention(
-            query=local_context_reshape, 
+        local_context_reshaped: torch.Tensor = self._transform_shape(input=local_context)
+        # print(f'global_context_reshaped: {global_context_reshaped.mean().item()}')
+        # print(f'local_context_reshaped: {local_context_reshaped.mean().item()}')
+        # print('------')
+        # Cross attention
+        output: torch.Tensor = self.cross_attention(
+            query=local_context_reshaped, 
             key=global_context_reshaped,
             value=global_context_reshaped,
+            attn_mask=None,
             need_weights=False, # to save significant memory for large sequence length
         )[0]
-        assert output.shape == global_context.shape == local_context.shape
+        output = local_context_reshaped + output
+        # output = self.feedforward(output) + output
+
+        # print(f'output: {output.mean().item()}')
+        # print(f'local_context_reshaped: {local_context_reshaped.mean().item()}')
+        # print(f'global_context_reshaped: {global_context_reshaped.mean().item()}')
+        # print('--------')
+        # output = self.feedforward1(output) + output
+
+        # # Cross attention
+        # output1: torch.Tensor = self.cross_attention2(
+        #     query=output, 
+        #     key=global_context_reshaped,
+        #     value=global_context_reshaped,
+        #     attn_mask=None,
+        #     need_weights=False, # to save significant memory for large sequence length
+        # )[0]
+        # output = output1 + output
+        # output = self.feedforward2(output) + output
+
+        # # Cross attention
+        # output1: torch.Tensor = self.cross_attention3(
+        #     query=output, 
+        #     key=global_context_reshaped,
+        #     value=global_context_reshaped,
+        #     attn_mask=None,
+        #     need_weights=False, # to save significant memory for large sequence length
+        # )[0]
+        # output = output1 + output
 
         output = self._untransform_shape(
-            input=output, n_timesteps=n_timesteps, n_patches=local_context.shape[2], 
+            input=output, n_timesteps=n_timesteps, 
+            n_xpatches=local_context.shape[2], n_ypatches=local_context.shape[3], 
         )
+        assert output.shape == local_context.shape
         return output
 
     @staticmethod

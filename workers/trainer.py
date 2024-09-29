@@ -300,8 +300,7 @@ class LocalOperatorTrainer(_BaseOperatorTrainer):
                         batch_global_contexts: Tuple[torch.Tensor, ...]
                         _, *batch_global_contexts = self.global_operator(input=batch_global_input)
 
-                    batch_local_prediction: torch.Tensor
-                    batch_local_prediction, *_ = self.local_operator(
+                    batch_local_prediction: torch.Tensor = self.local_operator(
                         input=batch_local_input, global_contexts=list(batch_global_contexts),
                     )
                     # Compute loss
@@ -377,7 +376,7 @@ class LocalOperatorTrainer(_BaseOperatorTrainer):
                 batch_global_contexts: Tuple[torch.Tensor, ...]
                 _, *batch_global_contexts = self.global_operator(input=batch_global_input)
                 batch_local_prediction: torch.Tensor
-                batch_local_prediction, *_ = self.local_operator(
+                batch_local_prediction = self.local_operator(
                     input=batch_local_input, global_contexts=batch_global_contexts,
                 )
                 # Compute loss

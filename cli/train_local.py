@@ -35,10 +35,11 @@ def main(config: Dict[str, Any]) -> None:
     indays: int                         = int(config['dataset']['indays'])
     outdays: int                        = int(config['dataset']['outdays'])
 
-    from_checkpoint: Optional[str]      = config['global_architecture']['from_checkpoint']
+    from_checkpoint: Optional[str]      = config['local_architecture']['from_checkpoint']
     global_checkpoint: str              = str(config['local_architecture']['global_checkpoint'])
     block_size: int                     = int(config['local_architecture']['block_size'])
     patch_size: tuple                   = tuple(config['local_architecture']['patch_size'])
+    dropout_rate: float                 = float(config['local_architecture']['dropout_rate'])
     n_attention_heads: int              = int(config['local_architecture']['n_attention_heads'])
 
     noise_level: float                  = float(config['training']['noise_level'])
@@ -82,8 +83,7 @@ def main(config: Dict[str, Any]) -> None:
     # Load local operator
     if from_checkpoint is not None:
         local_loader = CheckpointLoader(checkpoint_path=from_checkpoint)
-        local_operator: LocalOperator; local_optimizer: Optimizer
-        local_operator, local_optimizer = local_loader.load(scope=globals())
+        local_operator: LocalOperator = local_loader.load(scope=globals())[0]   # ignore optimizer
     else:
         local_operator = LocalOperator(
             in_channels=global_operator.in_channels, 
@@ -95,9 +95,11 @@ def main(config: Dict[str, Any]) -> None:
             spatial_resolution=train_dataset.local_resolution,
             block_size=block_size, 
             patch_size=patch_size,
+            dropout_rate=dropout_rate,
             n_attention_heads=n_attention_heads,
         )
-        local_optimizer = Adam(params=local_operator.parameters(), lr=learning_rate)
+
+    local_optimizer = Adam(params=local_operator.parameters(), lr=learning_rate)
     
     # Load local trainer
     trainer = LocalOperatorTrainer(

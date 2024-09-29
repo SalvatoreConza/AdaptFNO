@@ -38,8 +38,8 @@ class _BaseOperator(nn.Module):
         assert self.embedding_dim % self.block_size == 0 and self.embedding_dim >= self.block_size, 'embedding_dim must be divisible by block_size'
         self.n_blocks: int = self.embedding_dim // self.block_size
 
-        assert self.spatial_resolution[0] % self.patch_size[0] == 0, 'spatial_resolution must be divisible by patch_size'
-        assert self.spatial_resolution[1] % self.patch_size[1] == 0, 'spatial_resolution must be divisible by patch_size'
+        assert self.spatial_resolution[0] % self.patch_size[0] == 0, f'spatial_resolution {self.spatial_resolution} must be divisible by patch_size {self.patch_size}'
+        assert self.spatial_resolution[1] % self.patch_size[1] == 0, f'spatial_resolution {self.spatial_resolution} must be divisible by patch_size {self.patch_size}'
         self.n_xpatches: int = self.spatial_resolution[0] // self.patch_size[0]
         self.n_ypatches: int = self.spatial_resolution[1] // self.patch_size[1]
         self.n_patches: int = self.n_xpatches * self.n_ypatches
@@ -92,10 +92,11 @@ class _BaseOperator(nn.Module):
     ):
         batch_size: int = input.shape[0]
         if in_contexts is not None:
-            assert len(in_contexts) == self.n_layers
-            assert self.embedding_dim == in_contexts[0].shape[2], (
+            assert self.n_layers <= len(in_contexts), 'LocalOperator.n_layers must not exceed GlobalOperator.n_layers'
+            assert self.embedding_dim == in_contexts[0].shape[-1], (
                 'LocalOperator.embedding_dim must be equal to GlobalOperator.embedding_dim'
             )
+            in_contexts = in_contexts[-self.n_layers:]  # Only select the last `n_layers` global contexts
 
         output: torch.Tensor = self.instance_norm(input)
         embedding: torch.Tensor = self._get_embedding(output)
@@ -145,14 +146,17 @@ class LocalOperator(_BaseOperator):
         n_layers: int, block_size: int,
         spatial_resolution: Tuple[int, int],
         patch_size: Tuple[int, int],
+        dropout_rate: float,
         n_attention_heads: int,
     ):
         super().__init__(
             in_channels=in_channels, out_channels=out_channels,
             embedding_dim=embedding_dim, 
             in_timesteps=in_timesteps, out_timesteps=out_timesteps,
-            n_layers=n_layers, block_size=block_size, 
+            # TODO: bring to config
+            n_layers=1, block_size=block_size, 
             spatial_resolution=spatial_resolution, patch_size=patch_size, 
+            dropout_rate=dropout_rate
         )
         self.n_attention_heads: int = n_attention_heads
         self.attentions = nn.ModuleList([
