@@ -14,18 +14,16 @@ dataset:
   outdays: 3
 
 global_architecture:
-  embedding_dim: 1536
+  embedding_dim: 640
+  n_hmodes: 48
+  n_wmodes: 48
   n_layers: 12
-  block_size: 384
-  patch_size: [8, 8]
-  dropout_rate: 0.
   from_checkpoint: null   # set to null to train from scratch
 
 local_architecture:
+  n_hmodes: 48
+  n_wmodes: 48
   n_layers: 2
-  block_size: 384
-  patch_size: [7, 7]
-  dropout_rate: 0.
   n_attention_heads: 8
   global_checkpoint: '.checkpoints/global/epoch55.pt'
   from_checkpoint: '.checkpoints/local/epoch20.pt'

@@ -1,0 +1,11 @@
+#!/bin/bash
+
+# Environment variables
+export PYTHONPATH=.
+export PATH=$(pwd):$PATH
+
+# Environment
+conda init
+source ~/.bashrc
+conda env create -f env.yaml
+conda activate neural_opeartor

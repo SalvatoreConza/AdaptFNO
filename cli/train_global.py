@@ -34,10 +34,9 @@ def main(config: Dict[str, Any]) -> None:
     outdays: int                        = int(config['dataset']['outdays'])
 
     embedding_dim: int                  = int(config['global_architecture']['embedding_dim'])
+    n_hmodes: int                       = int(config['global_architecture']['n_hmodes'])
+    n_wmodes: int                       = int(config['global_architecture']['n_wmodes'])
     n_layers: int                       = int(config['global_architecture']['n_layers'])
-    block_size: int                     = int(config['global_architecture']['block_size'])
-    patch_size: int                     = tuple(config['global_architecture']['patch_size'])
-    dropout_rate: float                 = float(config['global_architecture']['dropout_rate'])
     from_checkpoint: Optional[str]      = config['global_architecture']['from_checkpoint']
     
     noise_level: float                  = float(config['training']['noise_level'])
@@ -84,11 +83,10 @@ def main(config: Dict[str, Any]) -> None:
             embedding_dim=embedding_dim,
             in_timesteps=train_dataset.in_timesteps, 
             out_timesteps=train_dataset.out_timesteps,
+            n_hmodes=n_hmodes,
+            n_wmodes=n_wmodes,
             n_layers=n_layers,
             spatial_resolution=train_dataset.global_resolution,
-            block_size=block_size, 
-            patch_size=patch_size,
-            dropout_rate=dropout_rate,
         )
         
     optimizer = Adam(params=operator.parameters(), lr=learning_rate)
