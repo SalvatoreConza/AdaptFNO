@@ -210,7 +210,7 @@ if __name__ == '__main__':
     )
 
     from torch.utils.data import DataLoader
-    dataloader = DataLoader(dataset=self, batch_size=32, num_workers=0)
+    dataloader = DataLoader(dataset=self, batch_size=32)
 
 
 

@@ -26,20 +26,8 @@ class SpectralConv3d(nn.Module):
         assert input.ndim == 5
         N, T, H, W, E = input.shape
         assert E == self.embedding_dim
-
-        padded_T: int = self.next_power_of_2(T)
-        padded_H: int = self.next_power_of_2(H)
-        padded_W: int = self.next_power_of_2(W)
-        if (padded_T, padded_H, padded_W) != (T, H, W):
-            padded_input: torch.Tensor = F.pad(
-                input=input,
-                pad=(0, 0, 0, padded_W - W, 0, padded_H - H, 0, padded_T - T),
-                mode='constant', value=0
-            )
-        else:
-            padded_input: torch.Tensor = input
         # FFT
-        fourier_coeff: torch.Tensor = torch.fft.rfftn(padded_input, dim=(1, 2, 3), norm="ortho")
+        fourier_coeff: torch.Tensor = torch.fft.rfftn(input, dim=(1, 2, 3), norm="ortho")
         output_real = torch.zeros((N, T, H, W, E), device='cuda')
         output_imag = torch.zeros((N, T, H, W, E), device='cuda')
 
@@ -83,51 +71,81 @@ class SpectralConv3d(nn.Module):
         )
         return real_part, imag_part
 
-    @staticmethod
-    def next_power_of_2(x: int) -> int:
-        return 1 if x == 0 else 2 ** (x - 1).bit_length()
-
 
 class GlobalAttention(nn.Module):
 
-    def __init__(self, embedding_dim: int, n_heads: int):
+    def __init__(self, 
+        global_embedding_dim: int, 
+        local_embedding_dim: int, 
+        n_heads: int, global_patch_size: Tuple[int, int]
+    ):
         super().__init__()
-        self.embedding_dim: int = embedding_dim
+        self.global_embedding_dim: int = global_embedding_dim
+        self.local_embedding_dim: int = local_embedding_dim
         self.n_heads: int = n_heads
-        self.cross_attention = nn.MultiheadAttention(embed_dim=embedding_dim, num_heads=n_heads, batch_first=True)
-        self.feedforward = nn.Sequential(
-            nn.Linear(in_features=embedding_dim, out_features=embedding_dim * 8),
+        self.global_patch_size: Tuple[int, int] = global_patch_size
+        self.hpatch_size, self.wpatch_size = global_patch_size
+        self.feature_mlp = nn.Sequential(
+            nn.Linear(in_features=self.hpatch_size * self.wpatch_size * global_embedding_dim, out_features=global_embedding_dim),
             nn.ReLU(),
-            nn.Linear(in_features=embedding_dim * 8, out_features=embedding_dim * 4),
-            nn.ReLU(),
-            nn.Linear(in_features=embedding_dim * 4, out_features=embedding_dim),
+            nn.Linear(in_features=global_embedding_dim, out_features=global_embedding_dim),
         )
-        self.query_ln = nn.LayerNorm(normalized_shape=embedding_dim)
-        self.key_ln = nn.LayerNorm(normalized_shape=embedding_dim)
+        self.cross_attention = nn.MultiheadAttention(
+            embed_dim=self.local_embedding_dim, 
+            # kdim=self.hpatch_size * self.wpatch_size * self.global_embedding_dim, 
+            # vdim=self.hpatch_size * self.wpatch_size * self.global_embedding_dim,
+            kdim=self.global_embedding_dim, 
+            vdim=self.global_embedding_dim,
+            num_heads=n_heads, batch_first=True,
+        )
+        self.feedforward = nn.Sequential(
+            nn.Linear(in_features=self.local_embedding_dim, out_features=self.local_embedding_dim * 2),
+            nn.ReLU(),
+            nn.Linear(in_features=self.local_embedding_dim * 2, out_features=self.local_embedding_dim * 2),
+            nn.ReLU(),
+            nn.Linear(in_features=self.local_embedding_dim * 2, out_features=self.local_embedding_dim),
+        )
 
     def forward(self, global_context: torch.Tensor, local_context: torch.Tensor) -> torch.Tensor:
         assert global_context.ndim == local_context.ndim == 5
         assert global_context.shape[:2] == local_context.shape[:2]
         batch_size, in_timesteps = local_context.shape[:2]
-        assert global_context.shape[-1] == local_context.shape[-1] == self.embedding_dim
+        assert global_context.shape[-1] == self.global_embedding_dim
+        assert local_context.shape[-1] == self.local_embedding_dim
         # NOTE: global_context and local_context may have diferent spatial resolution
-        n_local_hmodes, n_local_wmodes = local_context.shape[2:4]
-        n_global_hmodes, n_global_wmodes = global_context.shape[2:4]
+        local_H, local_W = local_context.shape[2:4]
+        global_H, global_W = global_context.shape[2:4]
+        assert global_H % self.hpatch_size == 0
+        assert global_W % self.wpatch_size == 0
 
-        global_context_reshaped: torch.Tensor = global_context.flatten(start_dim=1, end_dim=3)
-        local_context_reshaped: torch.Tensor = local_context.flatten(start_dim=1, end_dim=3)
+        h_patches: int = global_H // self.hpatch_size
+        w_patches: int = global_W // self.wpatch_size
+        patched_global_context: torch.Tensor = global_context.reshape(
+            batch_size, in_timesteps, h_patches, self.hpatch_size, w_patches, self.wpatch_size, self.global_embedding_dim
+        )
+        patched_global_context = patched_global_context.transpose(3, 4)
+        patched_global_context = patched_global_context.flatten(start_dim=4, end_dim=6)
+        patched_global_context = patched_global_context.flatten(start_dim=1, end_dim=3)
+        assert patched_global_context.shape == (
+            batch_size, in_timesteps * h_patches * w_patches, self.hpatch_size * self.wpatch_size * self.global_embedding_dim
+        )
+        patched_global_context = self.feature_mlp(patched_global_context)
+        local_context_reshaped: torch.Tensor = local_context.flatten(start_dim=1, end_dim=3) 
+        assert local_context_reshaped.shape == (batch_size, in_timesteps * local_H * local_W, self.local_embedding_dim)
+
         # Cross attention
         output: torch.Tensor = self.cross_attention(
-            query=self.query_ln(local_context_reshaped), 
-            key=self.key_ln(global_context_reshaped),
-            value=global_context_reshaped,
+            query=local_context_reshaped, 
+            key=patched_global_context,
+            value=patched_global_context,
             attn_mask=None,
             need_weights=False, # to save significant memory for large sequence length
         )[0]
-        assert output.shape == (batch_size, in_timesteps * n_local_hmodes * n_local_wmodes, self.embedding_dim)
-        output = local_context_reshaped + output
-        output = self.feedforward(output) + output
-        output = output.reshape(batch_size, in_timesteps, n_local_hmodes, n_local_wmodes, self.embedding_dim)
+        assert output.shape == local_context_reshaped.shape
+
+        # Add residual connection and feedforward
+        output = self.feedforward(local_context_reshaped + output) + output
+        output = output.reshape(batch_size, in_timesteps, local_H, local_W, self.local_embedding_dim)
         assert output.shape == local_context.shape
         return output
 

@@ -3,7 +3,7 @@ dataset:
   pressure_level: 1000
   global_latitude: [45, -45]   # (a, b) in the range [90.0, 89.75, 89.5, ..., -89.5, -89.75, -90.0]
   global_longitude: [60, 150]   # (a, b) in the range [0.0, 0.25, 0.5, ..., 359.25, 359.5, 359.75]
-  global_resolution: [128, 128]  # [x_res, y_res] or null to keep the original resolution
+  global_resolution: [128, 128]  # [H, W] or null to keep the original resolution
   local_latitude: [30, -10]
   local_longitude: [90, 130]
   train_fromyear: 1980
@@ -14,34 +14,38 @@ dataset:
   outdays: 3
 
 global_architecture:
-  embedding_dim: 640
-  n_hmodes: 48
-  n_wmodes: 48
-  n_layers: 12
-  from_checkpoint: null   # set to null to train from scratch
+  embedding_dim: 64
+  n_tmodes: 2
+  n_hmodes: 32
+  n_wmodes: 32
+  n_layers: 4
+  from_checkpoint: 'best_global/epoch13.pt'   # set to null to train from scratch
 
 local_architecture:
-  n_hmodes: 48
-  n_wmodes: 48
-  n_layers: 2
-  n_attention_heads: 8
-  global_checkpoint: '.checkpoints/global/epoch55.pt'
-  from_checkpoint: '.checkpoints/local/epoch20.pt'
+  embedding_dim: 64
+  n_tmodes: 8
+  n_hmodes: 36
+  n_wmodes: 36
+  n_layers: 1
+  local_downsampling: 1.5
+  n_attention_heads: 4
+  global_patch_size: [4, 4]
+  global_checkpoint: 'best_global/epoch13.pt'
+  from_checkpoint: null # set to null to train from scratch
 
 training:
-  noise_level: 0.
-  train_batch_size: 4
-  val_batch_size: 2
-  learning_rate: 5e-4
+  train_batch_size: 2
+  val_batch_size: 1
+  learning_rate: 1e-3
   n_epochs: 1000
   patience: 50
   tolerance: 0.
   save_frequency: 1
 
 predict:
-  ondate: '20240906'
-  from_global_checkpoint: '.checkpoints/global/epoch55.pt'
-  from_local_checkpoint: '.checkpoints/local/epoch20.pt'
+  ondate: '20240831'
+  from_global_checkpoint: 'best_global/epoch13.pt'
+  from_local_checkpoint: '.checkpoints/local/epoch4.pt'
   global_plot_resolution: null   # set to null to respect the true resolution
   local_plot_resolution: null   # set to null to respect the true resolution
 

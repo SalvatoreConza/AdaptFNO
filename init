@@ -8,4 +8,4 @@ export PATH=$(pwd):$PATH
 conda init
 source ~/.bashrc
 conda env create -f env.yaml
-conda activate neural_opeartor
+conda activate neural_operator

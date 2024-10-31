@@ -34,21 +34,19 @@ def main(config: Dict[str, Any]) -> None:
     plot_resolution: Optional[List[int, int]] = config['predict']['local_plot_resolution']
 
     # Initialize the global operator from global checkpoint
+    print(f'Conditioning on {global_checkpoint}')
     global_loader = CheckpointLoader(checkpoint_path=global_checkpoint)
     global_operator: GlobalOperator
     global_operator, _ = global_loader.load(scope=globals())
 
     # Initialize the local operator from local checkpoint
+    print(f'Predicting with {from_checkpoint}')
     local_loader = CheckpointLoader(checkpoint_path=from_checkpoint)
     local_operator: LocalOperator
     local_operator, _ = local_loader.load(scope=globals())
 
     # Initialize the predictor
-    local_predictor = LocalOperatorPredictor(
-        global_operator=global_operator,
-        local_operator=local_operator,
-        device=torch.device('cuda'),
-    )
+    local_predictor = LocalOperatorPredictor(global_operator=global_operator, local_operator=local_operator)
 
     # Initialize the test dataset
     dataset = ERA5_6Hour_Prediction(
@@ -66,17 +64,12 @@ def main(config: Dict[str, Any]) -> None:
 
 if __name__ == '__main__':
 
-    # Initialize the argument parser
     parser = argparse.ArgumentParser(description='Inference the Global Operator')
     parser.add_argument('--config', type=str, required=True, help='Configuration file name.')
-
     args: argparse.Namespace = parser.parse_args()
-    
-    # Load the configuration
     with open(file=args.config, mode='r') as f:
         config: Dict[str, Any] = yaml.safe_load(f)
 
-    # Run the main function with the configuration
     main(config)
 
 

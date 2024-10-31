@@ -37,12 +37,15 @@ def main(config: Dict[str, Any]) -> None:
 
     from_checkpoint: Optional[str]      = config['local_architecture']['from_checkpoint']
     global_checkpoint: str              = str(config['local_architecture']['global_checkpoint'])
-    n_hmodes: int                       = str(config['local_architecture']['n_hmodes'])
-    n_wmodes: int                       = str(config['local_architecture']['n_wmodes'])
+    embedding_dim: int                  = int(config['local_architecture']['embedding_dim'])
+    n_tmodes: int                       = int(config['local_architecture']['n_tmodes'])
+    n_hmodes: int                       = int(config['local_architecture']['n_hmodes'])
+    n_wmodes: int                       = int(config['local_architecture']['n_wmodes'])
     n_layers: int                       = int(config['local_architecture']['n_layers'])
+    local_downsampling: float           = float(config['local_architecture']['local_downsampling'])
     n_attention_heads: int              = int(config['local_architecture']['n_attention_heads'])
+    global_patch_size: Tuple[int]       = tuple(config['local_architecture']['global_patch_size'])
 
-    noise_level: float                  = float(config['training']['noise_level'])
     train_batch_size: int               = int(config['training']['train_batch_size'])
     val_batch_size: int                 = int(config['training']['val_batch_size'])
     learning_rate: float                = float(config['training']['learning_rate'])
@@ -82,20 +85,25 @@ def main(config: Dict[str, Any]) -> None:
 
     # Load local operator
     if from_checkpoint is not None:
+        print(f'Training from {from_checkpoint}')
         local_loader = CheckpointLoader(checkpoint_path=from_checkpoint)
         local_operator: LocalOperator = local_loader.load(scope=globals())[0]   # ignore optimizer
     else:
         local_operator = LocalOperator(
             in_channels=global_operator.in_channels, 
             out_channels=global_operator.out_channels,
-            embedding_dim=global_operator.embedding_dim,
+            local_embedding_dim=embedding_dim,
+            global_embedding_dim=global_operator.embedding_dim,
             in_timesteps=global_operator.in_timesteps, 
             out_timesteps=global_operator.out_timesteps,
-            n_hmodes=n_hmodes,
-            n_wmodes=n_wmodes,
+            n_tmodes=n_tmodes, n_hmodes=n_hmodes, n_wmodes=n_wmodes,
             n_layers=n_layers,
-            spatial_resolution=train_dataset.local_resolution,
             n_attention_heads=n_attention_heads,
+            global_patch_size=global_patch_size,
+            train_local_resolution=(
+                int(train_dataset.local_resolution[0] / local_downsampling), 
+                int(train_dataset.local_resolution[1] / local_downsampling),
+            )
         )
 
     local_optimizer = Adam(params=local_operator.parameters(), lr=learning_rate)
@@ -105,12 +113,10 @@ def main(config: Dict[str, Any]) -> None:
         local_operator=local_operator,
         global_operator=global_operator, 
         optimizer=local_optimizer,
-        noise_level=noise_level,
         train_dataset=train_dataset, 
         val_dataset=val_dataset,
         train_batch_size=train_batch_size, 
         val_batch_size=val_batch_size,
-        device=torch.device('cuda'),
     )
     trainer.train(
         n_epochs=n_epochs, patience=patience,
@@ -121,17 +127,12 @@ def main(config: Dict[str, Any]) -> None:
 
 if __name__ == "__main__":
 
-    # Initialize the argument parser
     parser = argparse.ArgumentParser(description='Train the Local Operator')
     parser.add_argument('--config', type=str, required=True, help='Configuration file name.')
-
     args: argparse.Namespace = parser.parse_args()
-    
-    # Load the configuration
     with open(file=args.config, mode='r') as f:
         config: Dict[str, Any] = yaml.safe_load(f)
 
-    # Run the main function with the configuration
     main(config)
 
 

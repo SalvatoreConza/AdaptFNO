@@ -2,6 +2,7 @@ import os
 from typing import List, Tuple, Optional, Callable
 
 import datetime as dt
+import matplotlib
 import matplotlib.pyplot as plt
 import torch
 import torch.nn.functional as F
@@ -13,7 +14,7 @@ def plot_groundtruths_2d(
     resolution: Tuple[int, int] | None = None,
 ) -> None:
     
-    assert groundtruths.ndim == 4   # (timesteps, u_dim, x_resolution, y_resolution)
+    assert groundtruths.ndim == 4   # (timesteps, n_channels, x_resolution, y_resolution)
 
     if reduction is not None:
         groundtruths: torch.Tensor = reduction(groundtruths)
@@ -32,9 +33,9 @@ def plot_groundtruths_2d(
         groundtruths: torch.Tensor = F.interpolate(input=groundtruths, size=resolution, mode='nearest')
 
     # Ensure that the plot respect the tensor's shape
-    x_res: int = groundtruths.shape[2]
-    y_res: int = groundtruths.shape[3]
-    aspect_ratio: float = x_res / y_res
+    H: int = groundtruths.shape[2]
+    W: int = groundtruths.shape[3]
+    aspect_ratio: float = H / W
 
     # Set plot configuration
     cmap: str = 'jet'
@@ -72,7 +73,7 @@ def plot_predictions_2d(
 ) -> None:
 
     assert groundtruth.shape == prediction.shape
-    assert groundtruth.ndim == 4   # (timesteps, u_dim, x_resolution, y_resolution)
+    assert groundtruth.ndim == 4   # (timesteps, n_channels, x_resolution, y_resolution)
     
     if reduction is not None:
         groundtruth: torch.Tensor = reduction(groundtruth)
@@ -97,41 +98,47 @@ def plot_predictions_2d(
         prediction: torch.Tensor = F.interpolate(input=prediction, size=resolution, mode='nearest')
 
     # Ensure that the plot respect the tensor's shape
-    x_res: int = groundtruth.shape[2]
-    y_res: int = groundtruth.shape[3]
-    aspect_ratio: float = x_res / y_res
+    H: int = groundtruth.shape[2]
+    W: int = groundtruth.shape[3]
+    aspect_ratio: float = H / W
 
     # Set plot configuration
     cmap: str = 'jet'
-    vmin: float = 0.
     vmax: float = 15.
     # vmax: float = groundtruth.max().item()
+    norm = matplotlib.colors.Normalize(vmin=0, vmax=vmax)
 
     for t in range(prediction.shape[0]):
         gt_field: torch.Tensor = groundtruth[t]
         pred_field: torch.Tensor = prediction[t]
         figwidth: float = 5.
         fig, axs = plt.subplots(2, 1, figsize=(figwidth, 2 * figwidth * aspect_ratio))
-        axs[0].imshow(
+        im0 = axs[0].imshow(
             gt_field.squeeze(dim=0).rot90(k=2).flip(dims=(1,)),
             origin="lower",
-            vmin=vmin, vmax=vmax,
+            norm=norm,
             cmap=cmap,
         )
         axs[0].set_title(f'groundtruth - {timestamps[t]}', fontsize=12)
-        axs[1].imshow(
+        cbar0 = axs[0].figure.colorbar(im0, ax=axs[0], orientation='vertical', fraction=0.046, pad=0.04)
+        cbar0.ax.tick_params(labelsize=10)
+
+        im1 = axs[1].imshow(
             pred_field.squeeze(dim=0).rot90(k=2).flip(dims=(1,)),
             origin="lower",
-            vmin=vmin, vmax=vmax,
+            norm=norm,
             cmap=cmap,
         )
+        cbar1 = axs[0].figure.colorbar(im1, ax=axs[1], orientation='vertical', fraction=0.046, pad=0.04)
+        cbar1.ax.tick_params(labelsize=10)
         axs[1].set_title(f'prediction - {metrics_notes[t]}', fontsize=12)
-        fig.subplots_adjust(left=0.01, right=0.99, bottom=0.05, top=0.95, hspace=0.15)
         
+        fig.subplots_adjust(left=0.01, right=0.97, bottom=0.05, top=0.95, hspace=0.15)
         timestamp: dt.datetime = dt.datetime.now()
         fig.savefig(
             f"{destination_directory}/{timestamp.strftime('%Y%m%d%H%M%S')}"
-            f"{timestamp.microsecond // 1000:03d}.png"
+            f"{timestamp.microsecond // 1000:03d}.png",
+            bbox_inches="tight"  # Ensures color bar labels are not cropped
         )
         plt.close(fig)
 

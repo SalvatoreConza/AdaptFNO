@@ -5,7 +5,6 @@ import yaml
 
 import torch
 import torch.nn as nn
-from torch.utils.data import random_split
 from torch.optim import Optimizer, Adam
 
 from models.operators import GlobalOperator
@@ -34,12 +33,12 @@ def main(config: Dict[str, Any]) -> None:
     outdays: int                        = int(config['dataset']['outdays'])
 
     embedding_dim: int                  = int(config['global_architecture']['embedding_dim'])
+    n_tmodes: int                       = int(config['global_architecture']['n_tmodes'])
     n_hmodes: int                       = int(config['global_architecture']['n_hmodes'])
     n_wmodes: int                       = int(config['global_architecture']['n_wmodes'])
     n_layers: int                       = int(config['global_architecture']['n_layers'])
     from_checkpoint: Optional[str]      = config['global_architecture']['from_checkpoint']
     
-    noise_level: float                  = float(config['training']['noise_level'])
     train_batch_size: int               = int(config['training']['train_batch_size'])
     val_batch_size: int                 = int(config['training']['val_batch_size'])
     learning_rate: float                = float(config['training']['learning_rate'])
@@ -74,6 +73,7 @@ def main(config: Dict[str, Any]) -> None:
 
     # Load global operator
     if from_checkpoint is not None:
+        print(f'Training from {from_checkpoint}')
         checkpoint_loader = CheckpointLoader(checkpoint_path=from_checkpoint)
         operator: GlobalOperator = checkpoint_loader.load(scope=globals())[0]   # ignore optimizer
     else:
@@ -83,24 +83,19 @@ def main(config: Dict[str, Any]) -> None:
             embedding_dim=embedding_dim,
             in_timesteps=train_dataset.in_timesteps, 
             out_timesteps=train_dataset.out_timesteps,
-            n_hmodes=n_hmodes,
-            n_wmodes=n_wmodes,
+            n_tmodes=n_tmodes, n_hmodes=n_hmodes, n_wmodes=n_wmodes,
             n_layers=n_layers,
-            spatial_resolution=train_dataset.global_resolution,
         )
-        
     optimizer = Adam(params=operator.parameters(), lr=learning_rate)
 
     # Load global trainer    
     trainer = GlobalOperatorTrainer(
         global_operator=operator, 
         optimizer=optimizer,
-        noise_level=noise_level,
         train_dataset=train_dataset, 
         val_dataset=val_dataset,
         train_batch_size=train_batch_size, 
         val_batch_size=val_batch_size,
-        device=torch.device('cuda'),
     )
     trainer.train(
         n_epochs=n_epochs, 
@@ -113,17 +108,12 @@ def main(config: Dict[str, Any]) -> None:
 
 if __name__ == "__main__":
 
-    # Initialize the argument parser
     parser = argparse.ArgumentParser(description='Train the Global Operator')
     parser.add_argument('--config', type=str, required=True, help='Configuration file name.')
-
     args: argparse.Namespace = parser.parse_args()
-    
-    # Load the configuration
     with open(file=args.config, mode='r') as f:
         config: Dict[str, Any] = yaml.safe_load(f)
 
-    # Run the main function with the configuration
     main(config)
 
 
