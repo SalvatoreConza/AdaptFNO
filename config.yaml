@@ -73,7 +73,7 @@ training_fno3d:
   patience: 5
   tolerance: 0.
   save_frequency: 1
-  from_checkpoint: null # set to null to train from scratch
+  from_checkpoint: '.checkpoints/benchmarks/fno3d_epoch1.pt' # set to null to train from scratch
 
 predict_fno3d:
   # ondate: '20240831'

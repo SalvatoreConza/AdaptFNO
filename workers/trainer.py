@@ -102,8 +102,8 @@ class MainTrainer:
         
             # Ragularly save checkpoint
             if checkpoint_path is not None and epoch % save_frequency == 0:
-                global_saver.save(model_states=self.global_operator.state_dict(), filename=f'epoch{epoch}.pt')
-                local_saver.save(model_states=self.local_operator.state_dict(), filename=f'epoch{epoch}.pt')
+                global_saver.save(model_states=self.global_operator.state_dict(), filename=f'global_epoch{epoch}.pt')
+                local_saver.save(model_states=self.local_operator.state_dict(), filename=f'local_epoch{epoch}.pt')
             
             # Reset metric records for next epoch
             train_metrics.reset()
@@ -123,8 +123,8 @@ class MainTrainer:
 
         # Always save last checkpoint
         if checkpoint_path:
-            global_saver.save(model_states=self.global_operator.state_dict(), filename=f'epoch{epoch}.pt')
-            local_saver.save(model_states=self.local_operator.state_dict(), filename=f'epoch{epoch}.pt')
+            global_saver.save(model_states=self.global_operator.state_dict(), filename=f'global_epoch{epoch}.pt')
+            local_saver.save(model_states=self.local_operator.state_dict(), filename=f'local_epoch{epoch}.pt')
             
 
     def evaluate(self) -> Tuple[float, float]:
@@ -239,7 +239,7 @@ class BenchmarkTrainer:
             # Reset metric records for next epoch
             train_metrics.reset()
             # Evaluate
-            del batch_global_input, batch_local_input, batch_local_groundtruth
+            del batch_local_input, batch_local_groundtruth
             val_rmse, val_mse = self.evaluate()
             timer.end_epoch(epoch)
             # Log
