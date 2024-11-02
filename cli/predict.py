@@ -8,13 +8,11 @@ from torch.optim import Adam
 from models.operators import GlobalOperator, LocalOperator
 from era5.datasets import ERA5_6Hour_Prediction
 from common.training import CheckpointLoader
-from workers.predictor import LocalOperatorPredictor
+from workers.predictor import MainPredictor
 
 
 def main(config: Dict[str, Any]) -> None:
     """
-    Main function to inference Global Operator in WindNet model.
-
     Parameters:
         config (Dict[str, Any]): Configuration dictionary.
     """
@@ -29,24 +27,22 @@ def main(config: Dict[str, Any]) -> None:
     indays: int                         = int(config['dataset']['indays'])
     outdays: int                        = int(config['dataset']['outdays'])
 
-    from_checkpoint: str                = str(config['predict']['from_local_checkpoint'])
-    global_checkpoint: str              = str(config['local_architecture']['global_checkpoint'])
-    plot_resolution: Optional[List[int, int]] = config['predict']['local_plot_resolution']
+    local_checkpoint: str               = str(config['predict']['local_checkpoint'])
+    global_checkpoint: str              = str(config['predict']['global_checkpoint'])
+    plot_resolution: Optional[List[int, int]] = config['predict']['plot_resolution']
 
     # Initialize the global operator from global checkpoint
     print(f'Conditioning on {global_checkpoint}')
     global_loader = CheckpointLoader(checkpoint_path=global_checkpoint)
-    global_operator: GlobalOperator
-    global_operator, _ = global_loader.load(scope=globals())
+    global_operator: GlobalOperator = global_loader.load(scope=globals())
 
     # Initialize the local operator from local checkpoint
-    print(f'Predicting with {from_checkpoint}')
-    local_loader = CheckpointLoader(checkpoint_path=from_checkpoint)
-    local_operator: LocalOperator
-    local_operator, _ = local_loader.load(scope=globals())
+    print(f'Predicting with {local_checkpoint}')
+    local_loader = CheckpointLoader(checkpoint_path=local_checkpoint)
+    local_operator: LocalOperator = local_loader.load(scope=globals())
 
     # Initialize the predictor
-    local_predictor = LocalOperatorPredictor(global_operator=global_operator, local_operator=local_operator)
+    local_predictor = MainPredictor(global_operator=global_operator, local_operator=local_operator)
 
     # Initialize the test dataset
     dataset = ERA5_6Hour_Prediction(
@@ -62,9 +58,10 @@ def main(config: Dict[str, Any]) -> None:
     
     local_predictor.predict(dataset=dataset, plot_resolution=plot_resolution)
 
+
 if __name__ == '__main__':
 
-    parser = argparse.ArgumentParser(description='Inference the Global Operator')
+    parser = argparse.ArgumentParser(description='Inference')
     parser.add_argument('--config', type=str, required=True, help='Configuration file name.')
     args: argparse.Namespace = parser.parse_args()
     with open(file=args.config, mode='r') as f:

@@ -47,80 +47,50 @@ class ERA5_6Hour(Dataset):
         self.in_timesteps: int = self.timesteps_per_day * indays
         self.out_timesteps: int = self.timesteps_per_day * outdays
         
-        # Check global/local dataset
-        self.has_global: bool = all([global_latitude, global_longitude])
-        self.has_local: bool = all([local_latitude, local_longitude])
-        assert self.has_global or self.has_local, 'either global or local must be specified'
+        global_hash: str = hash_params(
+            global_latitude=global_latitude, global_longitude=global_longitude, 
+            global_resolution=global_resolution,
+            indays=indays, outdays=outdays,
+        )
+        self.global_input_directory: str = os.path.join('tensors', 'globals', global_hash, 'input')
+        assert os.path.isdir(self.global_input_directory), 'Data tensors are not prepared'
 
-        if self.has_global:
-            global_hash: str = hash_params(
-                global_latitude=global_latitude, global_longitude=global_longitude, 
-                global_resolution=global_resolution,
-                indays=indays, outdays=outdays,
-            )
-            self.global_input_directory: str = os.path.join('tensors', 'globals', global_hash, 'input')
-            self.global_output_directory: str = os.path.join('tensors', 'globals', global_hash, 'output')
-            assert os.path.isdir(self.global_input_directory), 'Data tensors are not prepared'
-            assert os.path.isdir(self.global_output_directory), 'Data tensors are not prepared'
-
-            self.global_input_filenames: List[str] = self._directory2filenames(directory=self.global_input_directory)
-            self.global_output_filenames: List[str] = self._directory2filenames(directory=self.global_output_directory)
-            assert len(self.global_input_filenames) == len(self.global_output_filenames)
-
-        if self.has_local:
-            local_hash: str = hash_params(
-                local_latitude=local_latitude, local_longitude=local_longitude,
-                indays=indays, outdays=outdays,
-            )
-            self.local_input_directory: str = os.path.join('tensors', 'locals', local_hash, 'input')
-            self.local_output_directory: str = os.path.join('tensors', 'locals', local_hash, 'output')
-            assert os.path.isdir(self.local_input_directory), 'Data tensors are not prepared'
-            assert os.path.isdir(self.local_output_directory), 'Data tensors are not prepared'
-            
-            self.local_input_filenames: List[str] = self._directory2filenames(directory=self.local_input_directory)
-            self.local_output_filenames: List[str] = self._directory2filenames(directory=self.local_output_directory)
-            assert len(self.local_input_filenames) == len(self.local_output_filenames)
+        self.global_input_filenames: List[str] = self._directory2filenames(directory=self.global_input_directory)
+        local_hash: str = hash_params(
+            local_latitude=local_latitude, local_longitude=local_longitude,
+            indays=indays, outdays=outdays,
+        )
+        self.local_input_directory: str = os.path.join('tensors', 'locals', local_hash, 'input')
+        self.local_output_directory: str = os.path.join('tensors', 'locals', local_hash, 'output')
+        assert os.path.isdir(self.local_input_directory), 'Data tensors are not prepared'
+        assert os.path.isdir(self.local_output_directory), 'Data tensors are not prepared'
+        
+        self.local_input_filenames: List[str] = self._directory2filenames(directory=self.local_input_directory)
+        self.local_output_filenames: List[str] = self._directory2filenames(directory=self.local_output_directory)
+        assert len(self.local_input_filenames) == len(self.local_output_filenames)
 
         # Compute resolution
-        if self.has_global:
-            if global_resolution is None:
-                self.global_resolution: Tuple[int, int] = (
-                    (self.global_latitude[0] - self.global_latitude[1]) * 4 + 1,
-                    (self.global_longitude[1] - self.global_longitude[0]) * 4 + 1
-                )
-            else:
-                self.global_resolution: Tuple[int, int] = global_resolution
+        if global_resolution is None:
+            self.global_resolution: Tuple[int, int] = (
+                (self.global_latitude[0] - self.global_latitude[1]) * 4 + 1,
+                (self.global_longitude[1] - self.global_longitude[0]) * 4 + 1
+            )
         else:
-            self.global_resolution = None
+            self.global_resolution: Tuple[int, int] = global_resolution
 
-        if self.has_local:
-            self.local_resolution: Tuple[int, int] = (
-                    (self.local_latitude[0] - self.local_latitude[1]) * 4 + 1,
-                    (self.local_longitude[1] - self.local_longitude[0]) * 4 + 1
-                )
-        else:
-            self.local_resolution = None
+        self.local_resolution: Tuple[int, int] = (
+            (self.local_latitude[0] - self.local_latitude[1]) * 4 + 1,
+            (self.local_longitude[1] - self.local_longitude[0]) * 4 + 1
+        )
 
     def __getitem__(self, idx: int) -> Tuple[torch.Tensor, ...]:
-        sample: Tuple[torch.Tensor, ...] = tuple()
-
-        if self.has_global:
-            global_input: torch.Tensor = torch.load(os.path.join(self.global_input_directory, self.global_input_filenames[idx]))
-            global_output: torch.Tensor = torch.load(os.path.join(self.global_output_directory, self.global_output_filenames[idx]))
-            sample += (global_input, global_output)
-
-        if self.has_local:
-            local_input: torch.Tensor = torch.load(os.path.join(self.local_input_directory, self.local_input_filenames[idx]))
-            local_output: torch.Tensor = torch.load(os.path.join(self.local_output_directory, self.local_output_filenames[idx]))
-            sample += (local_input, local_output)
-
-        return sample
+        global_input: torch.Tensor = torch.load(os.path.join(self.global_input_directory, self.global_input_filenames[idx]))
+        local_input: torch.Tensor = torch.load(os.path.join(self.local_input_directory, self.local_input_filenames[idx]))
+        local_output: torch.Tensor = torch.load(os.path.join(self.local_output_directory, self.local_output_filenames[idx]))
+        return global_input, local_input, local_output
 
     def __len__(self) -> int:
-        if self.has_global:
-            return len(self.global_input_filenames)
-        else:
-            return len(self.local_input_filenames)
+        return len(self.local_input_filenames)
 
     def _directory2filenames(self, directory: str) -> List[str]:
         return sorted([
@@ -180,7 +150,7 @@ class ERA5_6Hour_Prediction(ERA5_6Hour):
         return False
     
     def compute_out_timestamps(self) -> List[dt.datetime]:
-        filename: str = self.global_output_filenames[0] if self.has_global else self.local_input_filenames[0]
+        filename: str = self.local_input_filenames[0]
         components: List[str] = filename.split('__')
         year = int(components[0][-4:])
         out_datestrings: List[str] = components[-1].replace('.pt','').split('_')

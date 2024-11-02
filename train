@@ -3,5 +3,5 @@
 CONFIG="config.yaml"
 
 echo "Start Training..."
-python cli/train_global.py --config="$CONFIG"
+python cli/train.py --config="$CONFIG"
 

@@ -3,5 +3,5 @@
 CONFIG="config.yaml"
 
 echo "Start Predicting..."
-python cli/predict_global.py --config="$CONFIG"
+python cli/predict.py --config="$CONFIG"
 

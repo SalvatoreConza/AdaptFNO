@@ -7,46 +7,77 @@ dataset:
   local_latitude: [30, -10]
   local_longitude: [90, 130]
   train_fromyear: 1980
-  train_toyear: 2022
-  val_fromyear: 2023
+  train_toyear: 2021
+  val_fromyear: 2022
   val_toyear: 2024
   indays: 10
   outdays: 3
 
+###########################################################
+######################### MAIN ############################
+
 global_architecture:
-  embedding_dim: 64
-  n_tmodes: 2
-  n_hmodes: 32
-  n_wmodes: 32
+  embedding_dim: 48
+  n_tmodes: 12
+  n_hmodes: 24
+  n_wmodes: 24
   n_layers: 4
-  from_checkpoint: 'best_global/epoch13.pt'   # set to null to train from scratch
 
 local_architecture:
-  embedding_dim: 64
-  n_tmodes: 8
-  n_hmodes: 36
-  n_wmodes: 36
-  n_layers: 1
-  local_downsampling: 1.5
+  embedding_dim: 48
+  n_tmodes: 12
+  n_hmodes: 24
+  n_wmodes: 24
+  n_layers: 2
+  local_downsampling: 2
   n_attention_heads: 4
-  global_patch_size: [4, 4]
-  global_checkpoint: 'best_global/epoch13.pt'
-  from_checkpoint: null # set to null to train from scratch
+  global_patch_size: [16, 16]
 
 training:
-  train_batch_size: 2
+  train_batch_size: 1
   val_batch_size: 1
-  learning_rate: 1e-3
-  n_epochs: 1000
-  patience: 50
+  learning_rate: 1e-6
+  n_epochs: 50
+  patience: 5
   tolerance: 0.
   save_frequency: 1
+  global_checkpoint: '.checkpoints/best/global/epoch13.pt' # set to null to train from scratch
+  local_checkpoint: '.checkpoints/best/local/epoch13.pt' # set to null to train from scratch
+  freeze_global: false
+  freeze_local: false
 
 predict:
-  ondate: '20240831'
-  from_global_checkpoint: 'best_global/epoch13.pt'
-  from_local_checkpoint: '.checkpoints/local/epoch4.pt'
-  global_plot_resolution: null   # set to null to respect the true resolution
-  local_plot_resolution: null   # set to null to respect the true resolution
+  # ondate: '20240831'
+  ondate: '20240903'
+  # ondate: '20240906'
+  global_checkpoint: '.checkpoints/global/epoch1_.pt'
+  local_checkpoint: '.checkpoints/local/epoch1_.pt'
+  plot_resolution: null   # set to null to respect the true resolution
 
 
+###########################################################
+####################### BENCHMARK #########################
+
+fno3d:
+  embedding_dim: 48
+  n_tmodes: 12
+  n_hmodes: 24
+  n_wmodes: 24
+  n_layers: 4
+
+training_fno3d:
+  train_batch_size: 1
+  val_batch_size: 1
+  learning_rate: 1e-3
+  n_epochs: 50
+  patience: 5
+  tolerance: 0.
+  save_frequency: 1
+  from_checkpoint: null # set to null to train from scratch
+
+predict_fno3d:
+  # ondate: '20240831'
+  ondate: '20240903'
+  # ondate: '20240906'
+  from_checkpoint: ''
+  plot_resolution: null   # set to null to respect the true resolution

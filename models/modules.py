@@ -85,17 +85,10 @@ class GlobalAttention(nn.Module):
         self.n_heads: int = n_heads
         self.global_patch_size: Tuple[int, int] = global_patch_size
         self.hpatch_size, self.wpatch_size = global_patch_size
-        self.feature_mlp = nn.Sequential(
-            nn.Linear(in_features=self.hpatch_size * self.wpatch_size * global_embedding_dim, out_features=global_embedding_dim),
-            nn.ReLU(),
-            nn.Linear(in_features=global_embedding_dim, out_features=global_embedding_dim),
-        )
         self.cross_attention = nn.MultiheadAttention(
             embed_dim=self.local_embedding_dim, 
-            # kdim=self.hpatch_size * self.wpatch_size * self.global_embedding_dim, 
-            # vdim=self.hpatch_size * self.wpatch_size * self.global_embedding_dim,
-            kdim=self.global_embedding_dim, 
-            vdim=self.global_embedding_dim,
+            kdim=self.hpatch_size * self.wpatch_size * self.global_embedding_dim, 
+            vdim=self.hpatch_size * self.wpatch_size * self.global_embedding_dim,
             num_heads=n_heads, batch_first=True,
         )
         self.feedforward = nn.Sequential(
@@ -129,7 +122,6 @@ class GlobalAttention(nn.Module):
         assert patched_global_context.shape == (
             batch_size, in_timesteps * h_patches * w_patches, self.hpatch_size * self.wpatch_size * self.global_embedding_dim
         )
-        patched_global_context = self.feature_mlp(patched_global_context)
         local_context_reshaped: torch.Tensor = local_context.flatten(start_dim=1, end_dim=3) 
         assert local_context_reshaped.shape == (batch_size, in_timesteps * local_H * local_W, self.local_embedding_dim)
 
