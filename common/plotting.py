@@ -111,8 +111,9 @@ def plot_predictions_2d(
     for t in range(prediction.shape[0]):
         gt_field: torch.Tensor = groundtruth[t]
         pred_field: torch.Tensor = prediction[t]
+        mae_field: torch.Tensor = torch.abs(gt_field - pred_field)
         figwidth: float = 5.
-        fig, axs = plt.subplots(2, 1, figsize=(figwidth, 2 * figwidth * aspect_ratio))
+        fig, axs = plt.subplots(3, 1, figsize=(figwidth, 3 * figwidth * aspect_ratio)) 
         im0 = axs[0].imshow(
             gt_field.squeeze(dim=0).rot90(k=2).flip(dims=(1,)),
             origin="lower",
@@ -132,7 +133,17 @@ def plot_predictions_2d(
         cbar1 = axs[0].figure.colorbar(im1, ax=axs[1], orientation='vertical', fraction=0.046, pad=0.04)
         cbar1.ax.tick_params(labelsize=10)
         axs[1].set_title(f'prediction - {metrics_notes[t]}', fontsize=12)
-        
+
+        im2 = axs[2].imshow(
+            mae_field.squeeze(dim=0).rot90(k=2).flip(dims=(1,)),
+            origin="lower",
+            norm=norm,
+            cmap=cmap,
+        )
+        axs[2].set_title(f'Avg. MAE: {mae_field.mean().item():.4f}', fontsize=12)
+        cbar2 = axs[2].figure.colorbar(im2, ax=axs[2], orientation='vertical', fraction=0.046, pad=0.04)
+        cbar2.ax.tick_params(labelsize=10)
+                
         fig.subplots_adjust(left=0.01, right=0.97, bottom=0.05, top=0.95, hspace=0.15)
         timestamp: dt.datetime = dt.datetime.now()
         fig.savefig(

@@ -50,8 +50,8 @@ predict:
   # ondate: '20240831'
   ondate: '20240903'
   # ondate: '20240906'
-  global_checkpoint: '.checkpoints/global/epoch1_.pt'
-  local_checkpoint: '.checkpoints/local/epoch1_.pt'
+  global_checkpoint: '.checkpoints/best/global/epoch1_.pt'
+  local_checkpoint: '.checkpoints/best/local/epoch1_.pt'
   plot_resolution: null   # set to null to respect the true resolution
 
 
@@ -73,11 +73,11 @@ training_fno3d:
   patience: 5
   tolerance: 0.
   save_frequency: 1
-  from_checkpoint: '.checkpoints/benchmarks/fno3d_epoch1.pt' # set to null to train from scratch
+  from_checkpoint: '.checkpoints/benchmarks/fno3d_epoch3.pt' # set to null to train from scratch
 
 predict_fno3d:
   # ondate: '20240831'
   ondate: '20240903'
   # ondate: '20240906'
-  from_checkpoint: ''
+  from_checkpoint: '.checkpoints/benchmarks/fno3d_epoch3.pt'
   plot_resolution: null   # set to null to respect the true resolution
