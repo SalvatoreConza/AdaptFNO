@@ -33,13 +33,11 @@ def main(config: Dict[str, Any]) -> None:
     outdays: int                        = int(config['dataset']['outdays'])
 
     global_embedding_dim: int           = int(config['global_architecture']['embedding_dim'])
-    global_n_tmodes: int                = int(config['global_architecture']['n_tmodes'])
     global_n_hmodes: int                = int(config['global_architecture']['n_hmodes'])
     global_n_wmodes: int                = int(config['global_architecture']['n_wmodes'])
     global_n_layers: int                = int(config['global_architecture']['n_layers'])
 
     local_embedding_dim: int            = int(config['local_architecture']['embedding_dim'])
-    local_n_tmodes: int                 = int(config['local_architecture']['n_tmodes'])
     local_n_hmodes: int                 = int(config['local_architecture']['n_hmodes'])
     local_n_wmodes: int                 = int(config['local_architecture']['n_wmodes'])
     local_n_layers: int                 = int(config['local_architecture']['n_layers'])
@@ -95,7 +93,7 @@ def main(config: Dict[str, Any]) -> None:
             embedding_dim=global_embedding_dim,
             in_timesteps=train_dataset.in_timesteps, 
             out_timesteps=train_dataset.out_timesteps,
-            n_tmodes=global_n_tmodes, n_hmodes=global_n_hmodes, n_wmodes=global_n_wmodes,
+            n_hmodes=global_n_hmodes, n_wmodes=global_n_wmodes,
             n_layers=global_n_layers,
             spatial_resolution=train_dataset.global_resolution,
         )
@@ -106,6 +104,7 @@ def main(config: Dict[str, Any]) -> None:
         local_loader = CheckpointLoader(checkpoint_path=local_checkpoint)
         local_operator: LocalOperator = local_loader.load(scope=globals())
     else:
+        print(f'Training from scratch')
         local_operator = LocalOperator(
             in_channels=train_dataset.in_channels, 
             out_channels=train_dataset.out_channels,
@@ -113,7 +112,7 @@ def main(config: Dict[str, Any]) -> None:
             global_embedding_dim=global_embedding_dim,
             in_timesteps=train_dataset.in_timesteps, 
             out_timesteps=train_dataset.out_timesteps,
-            n_tmodes=local_n_tmodes, n_hmodes=local_n_hmodes, n_wmodes=local_n_wmodes,
+            n_hmodes=local_n_hmodes, n_wmodes=local_n_wmodes,
             n_layers=local_n_layers,
             n_attention_heads=n_attention_heads,
             global_patch_size=global_patch_size,

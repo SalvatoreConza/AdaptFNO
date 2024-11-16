@@ -12,7 +12,7 @@ from common.functional import compute_velocity_field
 from common.plotting import plot_predictions_2d
 
 from models.operators import GlobalOperator, LocalOperator
-from models.benchmarks import FNO3D
+from models.benchmarks import FNO2D
 from era5.datasets import ERA5_6Hour_Prediction
 
 
@@ -36,6 +36,11 @@ class MainPredictor:
         # Keep track of groundtruths and predictions
         timestamps: List[str] = []
         metric_notes: List[str] = []
+        import pandas as pd
+        prediction_hours = []
+        mses = []
+        rmses = []
+        ondates = []
         with torch.no_grad():
             # Make one-step prediction
             global_contexts: Tuple[torch.Tensor, ...]
@@ -58,6 +63,11 @@ class MainPredictor:
                 timestamps.append(f'{prediction_timestamp.strftime("%Y-%m-%d %H:00")}')
                 metric_notes.append(f'MSE: {mean_mse:.4f}, RMSE: {mean_rmse:.4f}')
 
+                prediction_hours.append((idx + 1) * 6)
+                mses.append(mean_mse)
+                rmses.append(mean_rmse)
+                ondates.append(dataset.ondate)
+
         # Plot the prediction
         plot_predictions_2d(
             groundtruth=local_groundtruth.squeeze(dim=0), 
@@ -67,6 +77,7 @@ class MainPredictor:
             reduction=partial(compute_velocity_field, dim=1),
             resolution=plot_resolution,
         )
+        return pd.DataFrame(data={'prediction_hours': prediction_hours, 'ondate': ondates, 'time': timestamps, 'mse': mses, 'rmse': rmses})
 
     def _downsample(self, input: torch.Tensor, size: Tuple[int, int]) -> torch.Tensor:
         assert input.ndim == 5
@@ -77,7 +88,7 @@ class MainPredictor:
 
 class BenchmarkPredictor:
 
-    def __init__(self, net: FNO3D):
+    def __init__(self, net: FNO2D):
         self.net: GlobalOperator = net.cuda().eval()
         self.loss_function: nn.Module = nn.MSELoss(reduction='sum')
 
@@ -87,6 +98,13 @@ class BenchmarkPredictor:
         # Keep track of groundtruths and predictions
         timestamps: List[str] = []
         metric_notes: List[str] = []
+
+        import pandas as pd
+        prediction_hours = []
+        mses = []
+        rmses = []
+        ondates = []
+
         with torch.no_grad():
             # Make one-step prediction
             local_prediction: torch.Tensor = self.net(input=local_input)
@@ -104,6 +122,11 @@ class BenchmarkPredictor:
                 timestamps.append(f'{prediction_timestamp.strftime("%Y-%m-%d %H:00")}')
                 metric_notes.append(f'MSE: {mean_mse:.4f}, RMSE: {mean_rmse:.4f}')
 
+                prediction_hours.append((idx + 1) * 6)
+                mses.append(mean_mse)
+                rmses.append(mean_rmse)
+                ondates.append(dataset.ondate)
+
         # Plot the prediction
         plot_predictions_2d(
             groundtruth=local_groundtruth.squeeze(dim=0), 
@@ -114,5 +137,6 @@ class BenchmarkPredictor:
             resolution=plot_resolution,
         )
 
+        return pd.DataFrame(data={'prediction_hours': prediction_hours, 'ondate': ondates, 'time': timestamps, 'mse': mses, 'rmse': rmses})
 
 

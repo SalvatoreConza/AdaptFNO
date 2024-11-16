@@ -6,20 +6,19 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 
-class SpectralConv3d(nn.Module):
+class SpectralConv2d(nn.Module):
 
-    def __init__(self, embedding_dim: int, n_tmodes: int, n_hmodes: int, n_wmodes: int):
+    def __init__(self, embedding_dim: int, n_hmodes: int, n_wmodes: int):
         super().__init__()
         self.embedding_dim: int = embedding_dim
-        self.n_tmodes: int = n_tmodes
         self.n_hmodes: int = n_hmodes
         self.n_wmodes: int = n_wmodes
         self.scale: float = 0.02
         self.weights_real = nn.Parameter(
-            self.scale * torch.randn((2, n_tmodes, n_hmodes, n_wmodes, embedding_dim, embedding_dim), dtype=torch.float)
+            self.scale * torch.randn((2, n_hmodes, n_wmodes, embedding_dim, embedding_dim), dtype=torch.float)
         )
         self.weights_imag = nn.Parameter(
-            self.scale * torch.randn((2, n_tmodes, n_hmodes, n_wmodes, embedding_dim, embedding_dim), dtype=torch.float)
+            self.scale * torch.randn((2, n_hmodes, n_wmodes, embedding_dim, embedding_dim), dtype=torch.float)
         )
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
@@ -27,16 +26,16 @@ class SpectralConv3d(nn.Module):
         N, T, H, W, E = input.shape
         assert E == self.embedding_dim
         # FFT
-        fourier_coeff: torch.Tensor = torch.fft.rfftn(input, dim=(1, 2, 3), norm="ortho")
+        fourier_coeff: torch.Tensor = torch.fft.rfft2(input, dim=(2, 3), norm="ortho")
         output_real = torch.zeros((N, T, H, W, E), device='cuda')
         output_imag = torch.zeros((N, T, H, W, E), device='cuda')
 
         pos_freq_slice: Tuple[slice, slice, slice, slice, slice] = (
-            slice(None), slice(None, self.n_tmodes), slice(None, self.n_hmodes), slice(None, self.n_wmodes), slice(None), 
-        )   # [:, :self.n_tmodes, :self.n_hmodes, :self.n_wmodes, :] 
+            slice(None), slice(None), slice(None, self.n_hmodes), slice(None, self.n_wmodes), slice(None), 
+        )   # [:, :, :self.n_hmodes, :self.n_wmodes, :] 
         neg_freq_slice: Tuple[slice, slice, slice, slice, slice] = (
-            slice(None), slice(-self.n_tmodes, None), slice(-self.n_hmodes, None), slice(None, self.n_wmodes), slice(None), 
-        )   # [:, -self.t_hmodes:, -self.n_hmodes:, :self.n_wmodes, :]
+            slice(None), slice(None), slice(-self.n_hmodes, None), slice(None, self.n_wmodes), slice(None), 
+        )   # [:, :, -self.n_hmodes:, :self.n_wmodes, :]
         output_real[pos_freq_slice], output_imag[pos_freq_slice] = self.complex_mul(
             input_real=fourier_coeff.real[pos_freq_slice],
             input_imag=fourier_coeff.imag[pos_freq_slice],
@@ -51,7 +50,7 @@ class SpectralConv3d(nn.Module):
         )
         # IFFT
         output: torch.Tensor = torch.complex(output_real, output_imag)
-        output = torch.fft.irfftn(output, s=(T, H, W), dim=(1, 2, 3), norm="ortho")
+        output = torch.fft.irfft2(output, s=(H, W), dim=(2, 3), norm="ortho")
         assert output.shape == input.shape == (N, T, H, W, E)
         return output
 
@@ -62,7 +61,7 @@ class SpectralConv3d(nn.Module):
         weights_real: torch.Tensor,
         weights_imag: torch.Tensor,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
-        ops: str = 'nthwi,thwio->nthwo'
+        ops: str = 'nthwi,hwio->nthwo'
         real_part: torch.Tensor = (
             torch.einsum(ops, input_real, weights_real) - torch.einsum(ops, input_imag, weights_imag)
         )

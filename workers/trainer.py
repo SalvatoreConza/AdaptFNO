@@ -9,11 +9,12 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from torch.optim import Adam
+from torch.nn import MSELoss
 
 from common.losses import TemporalMSE
 from common.training import Accumulator, EarlyStopping, Timer, Logger, CheckpointSaver
 from models.operators import GlobalOperator, LocalOperator
-from models.benchmarks import FNO3D
+from models.benchmarks import FNO2D
 from era5.datasets import ERA5_6Hour
 
 
@@ -170,7 +171,7 @@ class BenchmarkTrainer:
 
     def __init__(
         self, 
-        net: FNO3D,
+        net: FNO2D,
         train_dataset: ERA5_6Hour,
         val_dataset: ERA5_6Hour,
         train_batch_size: int,
@@ -188,11 +189,11 @@ class BenchmarkTrainer:
         self.loss_function: nn.Module = TemporalMSE(n_timesteps=train_dataset.out_timesteps, reduction='sum')
 
         if torch.cuda.device_count() > 1:
-            self.net: FNO3D = nn.DataParallel(net).cuda()
+            self.net: FNO2D = nn.DataParallel(net).cuda()
         elif torch.cuda.device_count() == 1:
-            self.net: FNO3D = net.cuda()
+            self.net: FNO2D = net.cuda()
         else:
-            self.net: FNO3D = net
+            self.net: FNO2D = net
 
         self.learning_rate: float = learning_rate
         self.optimizer = Adam(params=net.parameters(), lr=learning_rate)

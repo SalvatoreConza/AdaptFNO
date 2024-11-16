@@ -4,24 +4,23 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from models.modules import SpectralConv3d
+from models.modules import SpectralConv2d
 
 
-class FNO3D(nn.Module):
+class FNO2D(nn.Module):
 
     def __init__(
         self, 
         in_channels: int, out_channels: int,
         embedding_dim: int,
         in_timesteps: int, out_timesteps: int,
-        n_tmodes:int, n_hmodes: int, n_wmodes: int,
+        n_hmodes: int, n_wmodes: int,
         n_layers: int,
     ):
         super().__init__()
         self.in_channels: int = in_channels
         self.out_channels: int = out_channels
         self.embedding_dim: int = embedding_dim
-        self.n_tmodes: int = n_tmodes
         self.n_hmodes: int = n_hmodes
         self.n_wmodes: int = n_wmodes
         self.in_timesteps: int = in_timesteps
@@ -37,7 +36,7 @@ class FNO3D(nn.Module):
         )
         self.spectral_convs = nn.ModuleList(
             modules=[
-                SpectralConv3d(embedding_dim=embedding_dim, n_tmodes=n_tmodes, n_hmodes=n_hmodes, n_wmodes=n_wmodes)
+                SpectralConv2d(embedding_dim=embedding_dim, n_hmodes=n_hmodes, n_wmodes=n_wmodes)
                 for _ in range(n_layers)
             ]
         )

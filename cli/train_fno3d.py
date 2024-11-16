@@ -2,7 +2,7 @@ import argparse
 from typing import List, Tuple, Dict, Any, Optional
 import yaml
 
-from models.benchmarks import FNO3D
+from models.benchmarks import FNO2D
 from era5.datasets import ERA5_6Hour
 from common.training import CheckpointLoader
 from workers.trainer import BenchmarkTrainer
@@ -30,7 +30,6 @@ def main(config: Dict[str, Any]) -> None:
     outdays: int                        = int(config['dataset']['outdays'])
 
     embedding_dim: int                  = int(config['fno3d']['embedding_dim'])
-    n_tmodes: int                       = int(config['fno3d']['n_tmodes'])
     n_hmodes: int                       = int(config['fno3d']['n_hmodes'])
     n_wmodes: int                       = int(config['fno3d']['n_wmodes'])
     n_layers: int                       = int(config['fno3d']['n_layers'])
@@ -72,15 +71,15 @@ def main(config: Dict[str, Any]) -> None:
     if from_checkpoint is not None:
         print(f'Training from {from_checkpoint}')
         checkpoint_loader = CheckpointLoader(checkpoint_path=from_checkpoint)
-        net: FNO3D = checkpoint_loader.load(scope=globals())
+        net: FNO2D = checkpoint_loader.load(scope=globals())
     else:
-        net = FNO3D(
+        net = FNO2D(
             in_channels=train_dataset.in_channels, 
             out_channels=train_dataset.out_channels,
             embedding_dim=embedding_dim,
             in_timesteps=train_dataset.in_timesteps, 
             out_timesteps=train_dataset.out_timesteps,
-            n_tmodes=n_tmodes, n_hmodes=n_hmodes, n_wmodes=n_wmodes,
+            n_hmodes=n_hmodes, n_wmodes=n_wmodes,
             n_layers=n_layers,
         )
     
