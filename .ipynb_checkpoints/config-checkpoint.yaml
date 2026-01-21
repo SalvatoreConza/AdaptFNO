@@ -1,0 +1,28 @@
+dataset:
+  # Training Paths
+  train_gt: "../5.-Data_Split_train_val_test/CERRA/Split_data_2010-2022/ByYear/train_data_m_s_2010_2019_pen_CERRA.nc"
+  train_mask: "../5.-Data_Split_train_val_test/CERRA/Split_data_2010-2022/ByYear/2010-2019/AEMET/mask_aemet_daily-wind_m_s_2010-2019_CERRA.nc"
+  
+  # Validation Paths
+  val_gt: "../5.-Data_Split_train_val_test/CERRA/Split_data_2010-2022/ByYear/val_data_m_s_2020_2020_pen_CERRA.nc"
+  val_mask: "../5.-Data_Split_train_val_test/CERRA/Split_data_2010-2022/ByYear/2020-2020/AEMET/mask_aemet_daily-wind_m_s_2020-2020_CERRA.nc"
+  
+  # Variable Names (Leave null to auto-detect)
+  gt_var: "ws"
+  mask_var: "ws"
+
+architecture:
+  # Model Hyperparameters
+  embedding_dim: 256
+  n_layers: 4
+  block_size: 16
+  patch_size: [25, 25]  # [height_patch, width_patch]
+  global_downsample_factor: 2
+  dropout_rate: 0.0
+
+training:
+  batch_size: 4
+  learning_rate: 1.0e-4
+  n_epochs: 100
+  save_dir: "./checkpoints"
+  save_frequency: 10 # Save model every X epochs

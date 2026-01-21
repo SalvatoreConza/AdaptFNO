@@ -1,0 +1,7 @@
+#!/bin/bash
+
+CONFIG="config.yaml"
+
+echo "Start Training..."
+python cli/train_global.py --config="$CONFIG"
+
