@@ -1,156 +1,155 @@
-# AdaptFNO: Adaptive Fourier Neural Operator with Dynamic Spectral Modes and Multiscale Learning for Climate Modeling
+AdaptFNO: Adaptive Fourier Neural Operator for Climate Modeling & Inpainting
+Original Authors: Hiep Vo Dang (Yeshiva University), Bach D. G. Nguyen (Michigan State University), Phong C. H. Nguyen (Phenikaa University), Truong-Son Hy (UAB)
 
-[![NeurIPS 2025 Workshop](https://img.shields.io/badge/NeurIPS%202025-Workshop-blue)](https://neurips.cc/Conferences/2025/Schedule)
+Implementation Extension: Wind Field Inpainting on CERRA Data
 
-**Authors:**  
-Hiep Vo Dang (Yeshiva University),
-Bach D. G. Nguyen (Michigan State University),
-Phong C. H. Nguyen (Phenikaa University),
-Truong-Son Hy (University of Alabama at Birmingham) - Correspondence to thy@uab.edu
+📖 Overview
+Fourier Neural Operators (FNOs) are powerful for modeling spatio-temporal dynamics but often overlook fine-scale details. AdaptFNO introduces an adaptive variant that combines Global Operators (low-res context) and Local Operators (high-res details) via a cross-attention mechanism.
 
----
+🌪️ Extension: Wind Field Inpainting
+While the original paper focused on forecasting, this repository has been adapted for Spatial Inpainting (Reconstruction) of wind fields from sparse observations.
 
-## 📖 Overview
+This implementation:
 
-Fourier Neural Operators (FNOs) are powerful for modeling spatio-temporal dynamics but often emphasize low-frequency patterns, overlooking fine-scale details critical in **climate forecasting**.  
-We introduce **AdaptFNO**, an adaptive variant that:
+Reconstructs dense wind fields from sparse station-like data (masked inputs).
 
-- **Dynamically adjusts spectral modes** based on input frequency content.  
-- **Combines global and local operators** for multiscale learning.  
-- Uses a **cross-attention mechanism** to align global and local features.  
+Uses CERRA reanalysis data (NetCDF format).
 
-AdaptFNO effectively captures both **large-scale circulation** and **fine-grained events** such as typhoon trajectories, with efficient long-range stability.
+Operates in a multiscale manner: A Global Operator sees the coarse sparse grid, while the Local Operator fills fine details using cross-attention context.
 
-This codebase accompanies our NeurIPS 2025 Workshop paper:  
-> *\"AdaptFNO: Adaptive Fourier Neural Operator with Dynamic Spectral Modes and Multiscale Learning for Climate Modeling\"*.
+📐 Architecture
+The model uses a dual-branch architecture:
 
----
+Global Branch: Processes downsampled sparse inputs to capture large-scale flow.
 
-## 📐 Architecture
+Local Branch: Processes high-resolution sparse patches.
 
-The figure below illustrates the overall architecture of **AdaptFNO**:
+Cross-Attention: Bridges the two, allowing the local reconstruction to be consistent with global atmospheric patterns.
 
-![AdaptFNO Architecture](AdaptFNO.png)
+📂 Repository Structure
+The code is organized for modular training and grid search on HPC clusters:
 
----
+Plaintext
 
-## ✨ Features
-
-- **Dynamic spectral mode allocation** to handle both low- and high-frequency structures.  
-- **Multiscale design**:
-  - Global operator (low-res, large-scale patterns)  
-  - Local operator (high-res, fine details)  
-- **Cross-attention mechanism** for efficient knowledge transfer from global to local forecasts.  
-- **Validated on ERA5 reanalysis data** with case studies (e.g., Typhoon Yagi).  
-
----
-
-## 📂 Repository Structure
-
-```
-AdaptFNO-main/
+AdaptFNO/
 │
-├── models/              # AdaptFNO, FNO, and baseline model definitions
-├── data/                # Scripts for downloading and preprocessing ERA5 data
-├── training/            # Training loop, loss functions, and optimization setup
-├── utils/               # Helper functions (metrics, visualization, etc.)
-├── experiments/         # Example experiment configurations
-├── figures/             # Plots of results (e.g., Typhoon Yagi trajectory)
-└── main.py              # Entry point for training and evaluation
-```
+├── data/
+│   ├── cerra_dataset.py       # Xarray/NetCDF loader for CERRA (Sparse + Mask)
+│   └── __init__.py
+│
+├── models/
+│   ├── modules.py             # Core AFNO layers (PatchEmbed, MLP, etc.)
+│   ├── operators.py           # Global & Local Operator definitions
+│   └── adaptfno_inpainting.py # Wrapper combining Global+Local for inpainting
+│
+├── utils/
+│   ├── loss.py                # Inpainting Loss (MSE + L1 + Gradient + Consistency)
+│   └── __init__.py
+│
+├── configs/                   # Configuration files
+│   ├── config.yaml            # Main training configuration
+│   └── search/                # Generated configs for grid search
+│
+├── train.py                   # Main training script (loads config.yaml)
+├── grid_search.py             # Script to generate configs for hyperparam search
+├── submit_grid.sh             # Slurm script for running job arrays
+└── README.md
+⚙️ Installation
+Clone the repository and install dependencies. Note the addition of xarray and netCDF4 for handling CERRA data.
 
----
+Bash
 
-## ⚙️ Installation
-
-Clone the repository and install dependencies:
-
-```bash
-git clone https://github.com/HySonLab/AdaptFNO.git
+git clone https://github.com/YourUsername/AdaptFNO.git
 cd AdaptFNO
-pip install -r requirements.txt
-```
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+pip install xarray netCDF4 pyyaml tqdm
+Requirements:
 
-Recommended environment:
-- Python 3.9+
-- PyTorch 2.0+
-- CUDA 11.8+ (for GPU training)
+Python 3.9+
 
----
+PyTorch 2.0+
 
-## 📊 Dataset
+xarray, netCDF4 (Data Loading)
 
-We use the **ERA5 reanalysis dataset** (hourly data on pressure levels 250, 500, 850 hPa).  
-- Download from [Copernicus Climate Data Store](https://cds.climate.copernicus.eu/).  
-- Preprocessing scripts are provided in `data/`.
+pyyaml (Configuration)
 
-**Variables included:**  
-- U/V wind components  
-- Vertical velocity  
-- Temperature  
-- Relative humidity  
-- Geopotential  
+📊 Dataset: CERRA
+This implementation is designed for CERRA (Copernicus European Regional Reanalysis) data in NetCDF (.nc) format.
 
-Data is split chronologically:  
-- **Training:** 1980–2022  
-- **Validation:** 2023–2024  
+Input Format: The model expects pairs of NetCDF files for training and validation:
 
----
+Ground Truth (.nc): Dense wind speed data.
 
-## 🚀 Usage
+Mask (.nc): Binary mask (1 = valid observation, 0 = missing).
 
-### Training
-Run the following to train AdaptFNO:
-```bash
-python main.py --config configs/adaptfno.yaml
-```
+Preprocessing: The CERRADataset loader automatically:
 
-### Evaluation
-To evaluate a trained model:
-```bash
-python main.py --config configs/adaptfno.yaml --eval
-```
+Reads .nc files using xarray.
 
-### Baseline Models
-Configs for CNN and standard FNO are provided under `configs/`.
+Applies the mask to create sparse inputs (Sparse = GT * Mask).
 
----
+Auto-detects variable names (e.g., ws, u10, mask).
 
-## 📈 Results
+🚀 Usage
+1. Configuration (config.yaml)
+All training parameters are controlled via config.yaml. Edit this file to point to your specific NetCDF paths:
 
-- **Task:** Short-term climate forecasting (3-day horizon).  
-- **Metric:** Temporal Weighted MSE.  
-- **Case Study:** Typhoon Yagi trajectory prediction.  
+YAML
 
-AdaptFNO shows improved accuracy in capturing cyclone formation and fine-scale atmospheric dynamics compared to FNO and CNN baselines.
+dataset:
+  train_gt: "path/to/train_wind.nc"
+  train_mask: "path/to/train_mask.nc"
+  val_gt: "path/to/val_wind.nc"
+  val_mask: "path/to/val_mask.nc"
 
----
+architecture:
+  img_size: [128, 128]      # Will be auto-detected if matching data
+  patch_size: [16, 16]      # Must divide img_size!
+  embedding_dim: 256
+  
+training:
+  batch_size: 4
+  learning_rate: 1.0e-4
+  n_epochs: 100
+  save_dir: "./checkpoints"
+2. Training
+Run the training script with your configuration:
 
-## 🔮 Future Work
+Bash
 
-- Comprehensive benchmarks against CNN and FNO baselines.  
-- Extension to other extreme events (hurricanes, heat waves, precipitation extremes).  
-- Integration into operational forecasting pipelines for rapid high-resolution updates.  
+python train.py --config config.yaml
+The script will auto-detect your image resolution and warn you if the patch_size is incompatible.
 
----
+🔬 Hyperparameter Search (HPC / Slurm)
+For research experiments, use the included grid search tools to run parameter sweeps on a Slurm cluster.
 
-## 📑 Citation
+Step 1: Generate Configs Edit grid_search.py to define your parameter grid (e.g., learning rates, embedding dims). Then run:
 
-If you use this code, please cite our paper:
+Bash
 
-```bibtex
+python grid_search.py
+# Output: Generated 12 configuration files in configs/search/
+Step 2: Submit Job Array Update submit_grid.sh to match the number of files (e.g., #SBATCH --array=0-11) and submit:
+
+Bash
+
+sbatch submit_grid.sh
+This runs all experiments in parallel, saving separate checkpoints for each run.
+
+📑 Citation
+If you use the AdaptFNO architecture, please cite the original workshop paper:
+
+Snippet di codice
+
 @inproceedings{dang2025adaptfno,
   title={AdaptFNO: Adaptive Fourier Neural Operator with Dynamic Spectral Modes and Multiscale Learning for Climate Modeling},
   author={Dang, Hiep Vo and Nguyen, Bach D.G. and Nguyen, Phong C.H. and Hy, Truong-Son},
   booktitle={NeurIPS 2025 Workshop on Machine Learning and the Physical Sciences},
   year={2025}
 }
-```
+🤝 Acknowledgements
+Original AdaptFNO implementation by HySonLab.
 
----
+CERRA dataset (Copernicus Climate Change Service).
 
-## 🤝 Acknowledgements
-
-- ERA5 dataset (ECMWF / Copernicus Climate Data Store).  
-- Fourier Neural Operator (Li et al., ICLR 2021).  
-- FourCastNet (Pathak et al., 2022).  
+Fourier Neural Operator (Li et al., ICLR 2021).
